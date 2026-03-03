@@ -108,6 +108,32 @@ def enter(
 
 
 @app.command()
+def code(
+    name: Optional[str] = typer.Option(
+        None,
+        "-n",
+        "--name",
+        help="Container to open. Defaults to current container.",
+        autocompletion=_complete_container_name,
+    ),
+) -> None:
+    """Open Cursor/VS Code attached to a container."""
+    from fluid.docker_manager import open_in_editor
+
+    if not name:
+        state = load_state()
+        if not state.current:
+            console.print(
+                "[red]No container specified and no current container. "
+                "Use [bold]fluid create[/bold] first.[/red]"
+            )
+            raise typer.Exit(1)
+        name = state.current
+
+    open_in_editor(name)
+
+
+@app.command()
 def kill(
     name: Optional[str] = typer.Option(
         None,

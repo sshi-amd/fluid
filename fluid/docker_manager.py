@@ -322,3 +322,52 @@ def exit_container() -> None:
     console.print(f"[green]Exited [bold]{name}[/bold].[/green]")
 
 
+def _find_editor() -> str:
+    """Return the CLI name of Cursor or VS Code, whichever is available."""
+    import shutil
+
+    for cmd in ("cursor", "code"):
+        if shutil.which(cmd):
+            return cmd
+    console.print(
+        "[red]Neither [bold]cursor[/bold] nor [bold]code[/bold] CLI found on PATH.[/red]\n"
+        "[dim]Install Cursor or VS Code and ensure the CLI is on your PATH.[/dim]"
+    )
+    raise SystemExit(1)
+
+
+def open_in_editor(name: str) -> None:
+    """Open Cursor / VS Code attached to a running fluid container."""
+    client = get_client()
+    state = load_state()
+
+    container = _find_container(client, name)
+    if not container:
+        full_name = f"{CONTAINER_PREFIX}-{name}"
+        container = _find_container(client, full_name)
+        if container:
+            name = full_name
+
+    if not container:
+        console.print(f"[red]Container [bold]{name}[/bold] not found.[/red]")
+        raise SystemExit(1)
+
+    if container.status != "running":
+        console.print(f"[cyan]Starting container [bold]{name}[/bold]...[/cyan]")
+        container.start()
+
+    state.current = name
+    save_state(state)
+
+    editor = _find_editor()
+    hex_name = name.encode().hex()
+    uri = f"vscode-remote://attached-container+{hex_name}/workspace"
+
+    console.print(
+        f"[green]Opening [bold]{name}[/bold] in [bold]{editor}[/bold]...[/green]"
+    )
+    subprocess.Popen(
+        [editor, "--folder-uri", uri],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
