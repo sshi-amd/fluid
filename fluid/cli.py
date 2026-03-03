@@ -108,42 +108,6 @@ def enter(
 
 
 @app.command()
-def swap(
-    name: str = typer.Option(
-        ...,
-        "-n",
-        "--name",
-        help="Container name to swap to.",
-        autocompletion=_complete_container_name,
-    ),
-) -> None:
-    """Swap to a different ROCm development container."""
-    from fluid.docker_manager import swap_container
-
-    swap_container(name)
-
-
-@app.command()
-def up(
-    version: str = typer.Argument(help="Target ROCm version to upgrade to."),
-) -> None:
-    """Upgrade to a higher ROCm version (creates a new container)."""
-    from fluid.docker_manager import upgrade_rocm
-
-    upgrade_rocm(version)
-
-
-@app.command()
-def down(
-    version: str = typer.Argument(help="Target ROCm version to downgrade to."),
-) -> None:
-    """Downgrade to a lower ROCm version (creates a new container)."""
-    from fluid.docker_manager import downgrade_rocm
-
-    downgrade_rocm(version)
-
-
-@app.command()
 def kill(
     name: Optional[str] = typer.Option(
         None,
@@ -214,26 +178,6 @@ def list_cmd() -> None:
     console.print()
     console.print(table)
     console.print()
-
-
-@app.command()
-def status() -> None:
-    """Show current container status and system info."""
-    from fluid.docker_manager import get_client, list_managed_containers
-    from fluid.tui import print_status_panel
-
-    client = get_client()
-    state = load_state()
-    containers = list_managed_containers(client)
-    print_status_panel(state, containers)
-
-
-@app.command()
-def dashboard() -> None:
-    """Open the interactive TUI dashboard."""
-    from fluid.tui import run_dashboard
-
-    run_dashboard()
 
 
 @app.command()
