@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fluid"
+version = "0.1.0"
+description = "CLI/TUI tool to manage ROCm Docker development containers"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = [
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+    "docker>=7.0.0",
+]
+
+[project.scripts]
+fluid = "fluid.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["fluid*"]
