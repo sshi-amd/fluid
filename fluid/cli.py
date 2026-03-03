@@ -16,9 +16,11 @@ from rich.table import Table
 
 from fluid.config import (
     CONTAINER_PREFIX,
+    DEFAULT_DISTRO,
     DEFAULT_ROCM_VERSION,
     LABEL_MANAGED,
     LABEL_ROCM_VERSION,
+    SUPPORTED_DISTROS,
     load_state,
 )
 
@@ -64,6 +66,12 @@ def create(
         "--workspace",
         help="Host directory to mount at /workspace. Defaults to cwd.",
     ),
+    distro: str = typer.Option(
+        DEFAULT_DISTRO,
+        "-d",
+        "--distro",
+        help=f"Base distro ({', '.join(SUPPORTED_DISTROS)}).",
+    ),
     force: bool = typer.Option(
         False,
         "--force",
@@ -73,11 +81,19 @@ def create(
     """Create a new ROCm development container."""
     from fluid.docker_manager import create_container
 
+    if distro not in SUPPORTED_DISTROS:
+        console.print(
+            f"[red]Unknown distro [bold]{distro}[/bold]. "
+            f"Supported: {', '.join(SUPPORTED_DISTROS)}[/red]"
+        )
+        raise typer.Exit(1)
+
     create_container(
         rocm_version=version,
         name=name,
         workspace=workspace,
         force=force,
+        distro=distro,
     )
 
 
@@ -142,11 +158,19 @@ def kill(
         help="Container to kill. Defaults to current container.",
         autocompletion=_complete_container_name,
     ),
+    all_containers: bool = typer.Option(
+        False,
+        "--all",
+        help="Kill all managed containers.",
+    ),
 ) -> None:
     """Stop and remove a ROCm development container."""
-    from fluid.docker_manager import kill_container
+    from fluid.docker_manager import kill_all_containers, kill_container
 
-    kill_container(name)
+    if all_containers:
+        kill_all_containers()
+    else:
+        kill_container(name)
 
 
 @app.command(name="exit")

@@ -88,10 +88,11 @@ def list_managed_containers(client: docker.DockerClient) -> list[Container]:
 def build_image(
     client: docker.DockerClient,
     rocm_version: str,
+    distro: str = "ubuntu-22.04",
     tag: Optional[str] = None,
 ) -> str:
     tag = tag or f"{IMAGE_PREFIX}:{rocm_version}"
-    dockerfile_content = generate_dockerfile(rocm_version)
+    dockerfile_content = generate_dockerfile(rocm_version, distro=distro)
 
     console.print(f"[cyan]Building image [bold]{tag}[/bold]...[/cyan]")
 
@@ -124,6 +125,7 @@ def create_container(
     name: Optional[str] = None,
     workspace: Optional[str] = None,
     force: bool = False,
+    distro: str = "ubuntu-22.04",
 ) -> ContainerRecord:
     client = get_client()
     state = load_state()
@@ -152,16 +154,25 @@ def create_container(
         )
         raise SystemExit(1)
 
-    image_tag = f"{IMAGE_PREFIX}:{rocm_version}"
+    image_tag = f"{IMAGE_PREFIX}:{distro}-{rocm_version}"
     try:
         client.images.get(image_tag)
         console.print(f"[dim]Using existing image {image_tag}[/dim]")
     except ImageNotFound:
-        build_image(client, rocm_version, tag=image_tag)
+        build_image(client, rocm_version, distro=distro, tag=image_tag)
 
     volumes = {}
     ws = workspace or os.getcwd()
     volumes[ws] = {"bind": "/workspace", "mode": "rw"}
+
+    home = Path.home()
+    ssh_dir = home / ".ssh"
+    if ssh_dir.is_dir():
+        volumes[str(ssh_dir)] = {"bind": "/home/developer/.ssh", "mode": "ro"}
+
+    gitconfig = home / ".gitconfig"
+    if gitconfig.is_file():
+        volumes[str(gitconfig)] = {"bind": "/home/developer/.gitconfig", "mode": "ro"}
 
     host_gids = _resolve_device_gids()
 
@@ -298,6 +309,29 @@ def kill_container(name: Optional[str] = None) -> None:
     console.print(
         f"[green]Container [bold]{name}[/bold] (ROCm {version}) removed.[/green]"
     )
+
+
+def kill_all_containers() -> None:
+    client = get_client()
+    state = load_state()
+    containers = list_managed_containers(client)
+
+    if not containers:
+        console.print("[dim]No fluid containers to remove.[/dim]")
+        return
+
+    for c in containers:
+        version = c.labels.get(LABEL_ROCM_VERSION, "?")
+        if c.status == "running":
+            console.print(f"[yellow]Stopping [bold]{c.name}[/bold]...[/yellow]")
+            c.stop(timeout=5)
+        console.print(f"[yellow]Removing [bold]{c.name}[/bold]...[/yellow]")
+        c.remove(force=True)
+        state.remove(c.name)
+
+    state.current = None
+    save_state(state)
+    console.print(f"[green]All containers removed ({len(containers)} total).[/green]")
 
 
 def exit_container() -> None:

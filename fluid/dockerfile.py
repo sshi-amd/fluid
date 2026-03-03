@@ -1,11 +1,6 @@
 """Dockerfile generation for ROCm development containers."""
 
-DOCKERFILE_TEMPLATE = """\
-FROM rocm/dev-ubuntu-22.04:{rocm_version}
-
-ENV DEBIAN_FRONTEND=noninteractive
-ENV ROCM_VERSION={rocm_version}
-
+_APT_PACKAGES = """\
 RUN apt-get update && apt-get install -y --no-install-recommends \\
     build-essential \\
     cmake \\
@@ -24,7 +19,34 @@ RUN apt-get update && apt-get install -y --no-install-recommends \\
     locales \\
     && rm -rf /var/lib/apt/lists/*
 
-RUN locale-gen en_US.UTF-8
+RUN locale-gen en_US.UTF-8"""
+
+_YUM_PACKAGES = """\
+RUN yum install -y \\
+    gcc gcc-c++ make \\
+    cmake \\
+    git \\
+    curl \\
+    wget \\
+    vim \\
+    nano \\
+    htop \\
+    tmux \\
+    python3 \\
+    python3-pip \\
+    openssh-clients \\
+    sudo \\
+    glibc-langpack-en \\
+    && yum clean all"""
+
+DOCKERFILE_TEMPLATE = """\
+FROM rocm/dev-{distro}:{rocm_version}
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV ROCM_VERSION={rocm_version}
+
+{packages}
+
 ENV LANG=en_US.UTF-8
 ENV LANGUAGE=en_US:en
 ENV LC_ALL=en_US.UTF-8
@@ -45,5 +67,10 @@ CMD ["/bin/bash"]
 """
 
 
-def generate_dockerfile(rocm_version: str) -> str:
-    return DOCKERFILE_TEMPLATE.format(rocm_version=rocm_version)
+def generate_dockerfile(rocm_version: str, distro: str = "ubuntu-22.04") -> str:
+    packages = _YUM_PACKAGES if "almalinux" in distro or "centos" in distro else _APT_PACKAGES
+    return DOCKERFILE_TEMPLATE.format(
+        rocm_version=rocm_version,
+        distro=distro,
+        packages=packages,
+    )

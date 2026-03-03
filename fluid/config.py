@@ -15,7 +15,9 @@ CONTAINER_PREFIX = "fluid"
 IMAGE_PREFIX = "fluid"
 LABEL_MANAGED = "fluid.managed"
 LABEL_ROCM_VERSION = "fluid.rocm_version"
-DEFAULT_ROCM_VERSION = "6.3"
+DEFAULT_ROCM_VERSION = "latest"
+DEFAULT_DISTRO = "ubuntu-22.04"
+SUPPORTED_DISTROS = ("ubuntu-22.04", "ubuntu-24.04", "almalinux-8")
 
 
 @dataclass
