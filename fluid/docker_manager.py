@@ -33,25 +33,8 @@ from fluid.detect import (
     print_warnings,
 )
 from fluid.dockerfile import generate_dockerfile
-from fluid.shell_wrapper import EXIT_CODE_STOP, get_wrapper_script
 
 console = Console()
-
-_wrapper_path: Optional[str] = None
-
-
-def _ensure_wrapper_script() -> str:
-    """Write the in-container wrapper to ~/.fluid/bin/fluid and return its path."""
-    global _wrapper_path
-    if _wrapper_path and Path(_wrapper_path).exists():
-        return _wrapper_path
-    bin_dir = Path.home() / ".fluid" / "bin"
-    bin_dir.mkdir(parents=True, exist_ok=True)
-    script = bin_dir / "fluid"
-    script.write_text(get_wrapper_script())
-    script.chmod(0o755)
-    _wrapper_path = str(script)
-    return _wrapper_path
 
 
 def get_client() -> docker.DockerClient:
@@ -180,9 +163,6 @@ def create_container(
     ws = workspace or os.getcwd()
     volumes[ws] = {"bind": "/workspace", "mode": "rw"}
 
-    wrapper = _ensure_wrapper_script()
-    volumes[wrapper] = {"bind": "/usr/local/bin/fluid", "mode": "ro"}
-
     host_gids = _resolve_device_gids()
 
     console.print(
@@ -241,24 +221,12 @@ def _exec_into(name: str) -> int:
     return result.returncode
 
 
-def _handle_post_exit(name: str, exit_code: int) -> None:
+def _handle_post_exit(name: str) -> None:
     """Handle cleanup after leaving a container shell."""
-    client = get_client()
-    state = load_state()
-
-    if exit_code == EXIT_CODE_STOP:
-        container = _find_container(client, name)
-        if container and container.status == "running":
-            console.print(f"[cyan]Stopping [bold]{name}[/bold]...[/cyan]")
-            container.stop(timeout=10)
-        state.current = None
-        save_state(state)
-        console.print(f"[green]Container [bold]{name}[/bold] stopped.[/green]")
-    else:
-        console.print(
-            f"[dim]Left [bold]{name}[/bold] "
-            f"(container still running).[/dim]"
-        )
+    console.print(
+        f"[dim]Left [bold]{name}[/bold] "
+        f"(container still running).[/dim]"
+    )
 
 
 def enter_container(name: str) -> None:
@@ -288,8 +256,8 @@ def enter_container(name: str) -> None:
         f"(ROCm {container.labels.get(LABEL_ROCM_VERSION, '?')})...[/green]"
     )
 
-    exit_code = _exec_into(name)
-    _handle_post_exit(name, exit_code)
+    _exec_into(name)
+    _handle_post_exit(name)
 
 
 def swap_container(name: str) -> None:
@@ -326,8 +294,8 @@ def swap_container(name: str) -> None:
         f"(ROCm {container.labels.get(LABEL_ROCM_VERSION, '?')})[/green]"
     )
 
-    exit_code = _exec_into(name)
-    _handle_post_exit(name, exit_code)
+    _exec_into(name)
+    _handle_post_exit(name)
 
 
 def kill_container(name: Optional[str] = None) -> None:

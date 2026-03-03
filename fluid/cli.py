@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+import os
+import warnings
+
+if os.environ.get("_FLUID_COMPLETE"):
+    warnings.filterwarnings("ignore")
+
 from typing import Optional
 
 import typer
@@ -23,6 +29,19 @@ app = typer.Typer(
     rich_markup_mode="rich",
 )
 console = Console()
+
+
+def _complete_container_name(incomplete: str) -> list[str]:
+    """Return managed container names matching the incomplete input."""
+    try:
+        from fluid.docker_manager import get_client, list_managed_containers
+
+        client = get_client()
+        containers = list_managed_containers(client)
+        names = [c.name.removeprefix(f"{CONTAINER_PREFIX}-") for c in containers]
+        return [n for n in names if n.startswith(incomplete)]
+    except Exception:
+        return []
 
 
 @app.command()
@@ -69,6 +88,7 @@ def enter(
         "-n",
         "--name",
         help="Container name to enter. Defaults to current container.",
+        autocompletion=_complete_container_name,
     ),
 ) -> None:
     """Enter (attach to) a ROCm development container."""
@@ -94,6 +114,7 @@ def swap(
         "-n",
         "--name",
         help="Container name to swap to.",
+        autocompletion=_complete_container_name,
     ),
 ) -> None:
     """Swap to a different ROCm development container."""
@@ -129,6 +150,7 @@ def kill(
         "-n",
         "--name",
         help="Container to kill. Defaults to current container.",
+        autocompletion=_complete_container_name,
     ),
 ) -> None:
     """Stop and remove a ROCm development container."""
