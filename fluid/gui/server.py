@@ -197,6 +197,47 @@ def get_config() -> dict:
     }
 
 
+class SettingsUpdate(BaseModel):
+    anthropic_api_key: Optional[str] = None
+    github_token: Optional[str] = None
+
+
+@app.get("/api/settings")
+def get_settings() -> dict:
+    from fluid.config import load_config
+
+    config = load_config()
+
+    def mask(val: Optional[str]) -> str:
+        if not val:
+            return ""
+        if len(val) <= 8:
+            return "*" * len(val)
+        return val[:4] + "*" * (len(val) - 8) + val[-4:]
+
+    return {
+        "anthropic_api_key": mask(config.anthropic_api_key),
+        "github_token": mask(config.github_token),
+        "anthropic_api_key_set": bool(config.anthropic_api_key),
+        "github_token_set": bool(config.github_token),
+    }
+
+
+@app.put("/api/settings")
+def update_settings(req: SettingsUpdate) -> dict:
+    from fluid.config import FluidConfig, load_config, save_config
+
+    config = load_config()
+
+    if req.anthropic_api_key is not None:
+        config.anthropic_api_key = req.anthropic_api_key or None
+    if req.github_token is not None:
+        config.github_token = req.github_token or None
+
+    save_config(config)
+    return {"status": "saved"}
+
+
 # --- WebSocket terminal ---
 
 @app.websocket("/ws/terminal/{name}")
@@ -311,10 +352,26 @@ def open_in_editor(name: str) -> dict:
     if not editor:
         return {"error": "Neither cursor nor code found on PATH"}
 
+    workdir = container.attrs.get("Config", {}).get("WorkingDir", "") or "/home/developer"
+
+    has_workspace_mount = any(
+        m.get("Destination") == "/workspace"
+        for m in container.attrs.get("Mounts", [])
+    )
+    if has_workspace_mount:
+        workdir = "/workspace"
+    else:
+        try:
+            exit_code, _ = container.exec_run("test -d /workspace")
+            if exit_code == 0:
+                workdir = "/workspace"
+        except Exception:
+            pass
+
     import json as _json
-    config_json = _json.dumps({"containerName": "/" + container.name})
+    config_json = _json.dumps({"containerId": container.id})
     hex_config = config_json.encode().hex()
-    uri = f"vscode-remote://attached-container+{hex_config}/workspace"
+    uri = f"vscode-remote://attached-container+{hex_config}{workdir}"
     subprocess.Popen(
         [editor, "--folder-uri", uri],
         stdout=subprocess.DEVNULL,

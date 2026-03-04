@@ -232,8 +232,9 @@ def create_container_headless(
     config = load_config()
 
     volumes = {}
-    ws = workspace or os.getcwd()
-    volumes[ws] = {"bind": "/workspace", "mode": "rw"}
+    ws = workspace
+    if ws:
+        volumes[ws] = {"bind": "/workspace", "mode": "rw"}
 
     home = Path.home()
     for src, dst, mode in [
@@ -335,7 +336,7 @@ def create_container(
         record = create_container_headless(
             rocm_version=rocm_version,
             name=name,
-            workspace=workspace,
+            workspace=workspace or os.getcwd(),
             distro=distro,
             on_log=_cli_log,
         )
@@ -558,9 +559,18 @@ def open_in_editor(name: str) -> None:
 
     import json as _json
     editor = _find_editor()
-    config_json = _json.dumps({"containerName": "/" + name})
+
+    workdir = "/workspace"
+    try:
+        exit_code, _ = container.exec_run("test -d /workspace")
+        if exit_code != 0:
+            workdir = container.attrs.get("Config", {}).get("WorkingDir", "") or "/home/developer"
+    except Exception:
+        pass
+
+    config_json = _json.dumps({"containerId": container.id})
     hex_config = config_json.encode().hex()
-    uri = f"vscode-remote://attached-container+{hex_config}/workspace"
+    uri = f"vscode-remote://attached-container+{hex_config}{workdir}"
 
     console.print(
         f"[green]Opening [bold]{name}[/bold] in [bold]{editor}[/bold]...[/green]"

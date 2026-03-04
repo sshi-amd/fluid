@@ -15,7 +15,8 @@
         <span class="logo-text">Fluid</span>
       </div>
       <nav class="sidebar-nav">
-        <button class="nav-item active">Home</button>
+        <button class="nav-item active" data-page="home" onclick="switchPage('home')">Home</button>
+        <button class="nav-item" data-page="settings" onclick="switchPage('settings')">Settings</button>
       </nav>
       <div class="sidebar-footer">v0.1.0</div>
     </aside>
@@ -51,6 +52,48 @@
         <div id="host-terminal-wrap"></div>
       </div>
     </main>
+
+    <!-- Settings page -->
+    <div id="page-settings" class="page" style="display:none">
+      <header id="settings-header">
+        <div class="header-info">
+          <h1 class="header-title">Settings</h1>
+          <span class="header-subtitle">API keys and tokens for your containers</span>
+        </div>
+      </header>
+
+      <div class="settings-content">
+        <div class="settings-section">
+          <h3 class="settings-section-title">Anthropic API Key</h3>
+          <p class="settings-section-desc">Used by Claude Code inside your containers. Set your key from <a href="https://console.anthropic.com/" class="settings-link" target="_blank">console.anthropic.com</a>.</p>
+          <div class="settings-field-row">
+            <input type="password" id="settings-anthropic-key" class="field-input settings-key-input" placeholder="sk-ant-...">
+            <button class="btn btn-secondary settings-toggle-vis" onclick="toggleKeyVisibility('settings-anthropic-key', this)">Show</button>
+          </div>
+          <div class="settings-key-status" id="anthropic-key-status"></div>
+        </div>
+
+        <div class="settings-section">
+          <h3 class="settings-section-title">GitHub Token</h3>
+          <p class="settings-section-desc">Personal access token for GitHub CLI and Git operations inside containers. Create one at <a href="https://github.com/settings/tokens" class="settings-link" target="_blank">github.com/settings/tokens</a>.</p>
+          <div class="settings-field-row">
+            <input type="password" id="settings-github-token" class="field-input settings-key-input" placeholder="ghp_...">
+            <button class="btn btn-secondary settings-toggle-vis" onclick="toggleKeyVisibility('settings-github-token', this)">Show</button>
+          </div>
+          <div class="settings-key-status" id="github-token-status"></div>
+        </div>
+
+        <div class="settings-actions">
+          <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+          <span id="settings-save-status" class="settings-save-status"></span>
+        </div>
+
+        <div class="settings-section settings-info-section">
+          <h3 class="settings-section-title">How keys are used</h3>
+          <p class="settings-section-desc">Keys are stored locally in <code>~/.fluid/config.json</code> (permissions 600) and injected as environment variables into new containers. Existing containers need to be recreated to pick up changed keys.</p>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Create Container Dialog -->
@@ -75,7 +118,7 @@
         <div class="combo-dropdown" id="combo-distro-list"></div>
       </div>
       <label class="field-label">Workspace Directory</label>
-      <input type="text" id="create-workspace" class="field-input" placeholder="Leave empty for server working directory">
+      <input type="text" id="create-workspace" class="field-input" placeholder="Leave empty for no mount (container-only workspace)">
       <div class="dialog-buttons">
         <button class="btn btn-secondary" onclick="hideDialog('create-dialog')">Cancel</button>
         <button class="btn btn-primary" onclick="submitCreate()">Create Container</button>

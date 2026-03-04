@@ -135,12 +135,19 @@ function initComboBox(wrapperId, inputId, listId, options, defaultValue) {
 
 async function refreshContainers() {
   const containers = await api("GET", "/containers");
+  const serverNames = new Set(containers.map((c) => c.name));
 
   for (const c of containers) {
     if (cards.has(c.name)) {
       updateCardStatus(c.name, c.status);
     } else {
       addCard(c);
+    }
+  }
+
+  for (const name of [...cards.keys()]) {
+    if (!serverNames.has(name)) {
+      removeCard(name);
     }
   }
 
@@ -165,11 +172,21 @@ async function pollStatuses() {
   if (cards.size === 0) return;
   try {
     const containers = await api("GET", "/containers");
+    const serverNames = new Set(containers.map((c) => c.name));
+
     for (const c of containers) {
       if (cards.has(c.name)) {
         updateCardStatus(c.name, c.status);
       }
     }
+
+    for (const name of [...cards.keys()]) {
+      if (!serverNames.has(name)) {
+        removeCard(name);
+      }
+    }
+
+    updateEmptyState();
   } catch (e) {
     // server unreachable
   }
@@ -717,6 +734,99 @@ function toggleHostTerminal() {
     document.addEventListener("mouseup", onUp);
   });
 })();
+
+// ─── Page navigation ───
+
+let currentPage = "home";
+
+function switchPage(page) {
+  currentPage = page;
+
+  document.querySelectorAll(".nav-item").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.page === page);
+  });
+
+  const mainEl = document.getElementById("main");
+  const settingsEl = document.getElementById("page-settings");
+
+  if (page === "home") {
+    mainEl.style.display = "flex";
+    settingsEl.style.display = "none";
+  } else if (page === "settings") {
+    mainEl.style.display = "none";
+    settingsEl.style.display = "flex";
+    loadSettings();
+  }
+}
+
+// ─── Settings ───
+
+async function loadSettings() {
+  try {
+    const data = await api("GET", "/settings");
+
+    const akInput = document.getElementById("settings-anthropic-key");
+    const gtInput = document.getElementById("settings-github-token");
+
+    akInput.value = data.anthropic_api_key || "";
+    akInput.dataset.masked = data.anthropic_api_key_set ? "true" : "false";
+
+    gtInput.value = data.github_token || "";
+    gtInput.dataset.masked = data.github_token_set ? "true" : "false";
+
+    const akStatus = document.getElementById("anthropic-key-status");
+    akStatus.textContent = data.anthropic_api_key_set ? "Key is configured" : "Not set";
+    akStatus.className = `settings-key-status${data.anthropic_api_key_set ? " set" : ""}`;
+
+    const gtStatus = document.getElementById("github-token-status");
+    gtStatus.textContent = data.github_token_set ? "Token is configured" : "Not set";
+    gtStatus.className = `settings-key-status${data.github_token_set ? " set" : ""}`;
+
+    document.getElementById("settings-save-status").textContent = "";
+  } catch (e) {
+    // ignore
+  }
+}
+
+async function saveSettings() {
+  const akInput = document.getElementById("settings-anthropic-key");
+  const gtInput = document.getElementById("settings-github-token");
+
+  const body = {};
+
+  if (akInput.dataset.masked === "true" && akInput.value.includes("*")) {
+    // user didn't change the masked value, skip
+  } else {
+    body.anthropic_api_key = akInput.value.trim();
+  }
+
+  if (gtInput.dataset.masked === "true" && gtInput.value.includes("*")) {
+    // user didn't change the masked value, skip
+  } else {
+    body.github_token = gtInput.value.trim();
+  }
+
+  try {
+    await api("PUT", "/settings", body);
+    const status = document.getElementById("settings-save-status");
+    status.textContent = "Settings saved";
+    setTimeout(() => { status.textContent = ""; }, 3000);
+    loadSettings();
+  } catch (e) {
+    alert(`Error saving settings: ${e.message}`);
+  }
+}
+
+function toggleKeyVisibility(inputId, btn) {
+  const input = document.getElementById(inputId);
+  if (input.type === "password") {
+    input.type = "text";
+    btn.textContent = "Hide";
+  } else {
+    input.type = "password";
+    btn.textContent = "Show";
+  }
+}
 
 // ─── Create dialog ───
 

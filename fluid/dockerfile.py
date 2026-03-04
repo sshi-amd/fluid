@@ -73,8 +73,10 @@ ENV LC_ALL=en_US.UTF-8
 RUN useradd -m -s /bin/bash -G sudo,video,render developer \\
     && echo "developer ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/developer
 
+RUN mkdir -p /workspace && echo "Welcome to your Fluid container." > /workspace/hi.txt && chown -R developer:developer /workspace
+
 USER developer
-WORKDIR /home/developer
+WORKDIR /workspace
 
 ENV PATH="/opt/rocm/bin:${{PATH}}"
 ENV LD_LIBRARY_PATH="/opt/rocm/lib:${{LD_LIBRARY_PATH}}"

@@ -1,6 +1,6 @@
 # fluid
 
-CLI tool to manage ROCm Docker development containers. Quickly create, enter, and switch between containers running different ROCm versions — with built-in Cursor/VS Code and Claude Code integration.
+CLI and desktop GUI for managing ROCm Docker development containers. Quickly create, enter, and switch between containers running different ROCm versions — with built-in Cursor/VS Code and Claude Code integration.
 
 ## Install
 
@@ -8,9 +8,49 @@ CLI tool to manage ROCm Docker development containers. Quickly create, enter, an
 pip install -e .
 ```
 
+With the desktop GUI:
+
+```bash
+pip install -e ".[gui]"
+```
+
 Requires Docker to be installed and running with ROCm support (`/dev/kfd`, `/dev/dri`).
 
-## Quick Start
+## GUI
+
+Fluid includes a desktop application for managing containers visually. Each container gets a real interactive terminal powered by xterm.js — you can run Claude Code, a shell, or both side by side, and switch between them without losing your session.
+
+```bash
+fluid-gui
+# or
+python -m fluid --gui
+```
+
+### Features
+
+- **Container dashboard** — grid view of all your Fluid containers with live status indicators
+- **Interactive terminals** — full xterm.js terminals with ANSI color, cursor movement, and clipboard support (Ctrl+Shift+C/V)
+- **Persistent sessions** — switch between Claude and Shell tabs without killing the other session
+- **Claude Code integration** — launch Claude Code inside any container with one click
+- **Editor integration** — open Cursor/VS Code attached to a container directly from the GUI
+- **Host terminal** — resizable local terminal panel at the bottom of the window
+- **Container management** — create new containers, start/stop, remove, or add existing ones to the dashboard
+- **Settings page** — configure your Anthropic API key and GitHub token from the GUI
+- **Status indicators** — green (running), yellow pulsing (Claude active), red (waiting for input), gray (stopped)
+- **Live sync** — containers killed or created from the CLI are automatically reflected in the GUI
+
+### Architecture
+
+The GUI runs as a FastAPI backend serving a web frontend inside a native pywebview window. No browser required.
+
+```
+fluid-gui
+  → FastAPI server (REST API + WebSocket terminals)
+  → pywebview native window (renders xterm.js frontend)
+  → PTY bridge (real docker exec sessions via pty.openpty)
+```
+
+## CLI Quick Start
 
 ```bash
 # Check your GPU and driver compatibility
@@ -44,7 +84,7 @@ fluid clean
 fluid exit
 ```
 
-## Commands
+## CLI Commands
 
 | Command | Description |
 |---------|-------------|
@@ -57,8 +97,9 @@ fluid exit
 | `exit` | Exit and stop the current container session. |
 | `list` | Show all managed containers in a table. |
 | `info [version]` | Show host GPU/driver info and check ROCm version compatibility. |
+| `config` | Manage API keys and tokens (`--set anthropic-key`, `--set github-token`). |
 
-## Options
+## CLI Options
 
 **`create`**
 - `-v, --version` — ROCm version (default: `latest`)
@@ -86,6 +127,7 @@ fluid exit
 5. **`claude`** starts the container if stopped and launches the Claude Code CLI inside it via `docker exec -it`.
 6. **`clean`** removes fluid-built Docker images, skipping any still in use by containers unless `--force` is passed.
 7. State is stored in `~/.fluid/state.json` to track the current container and history.
+8. API keys are stored in `~/.fluid/config.json` (permissions 600) and injected as environment variables into containers.
 
 ## Container Environment
 
@@ -95,7 +137,8 @@ Each container includes:
 - Python 3 with pip and venv
 - Node.js (LTS) and npm
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI (`claude`)
-- Your workspace mounted at `/workspace`
+- `/workspace` directory (mounted from host if specified, otherwise container-local)
 - GPU access via `/dev/kfd` and `/dev/dri` (with correct host GIDs)
 - SSH keys and git config mounted from host (read-only)
+- `~/.claude` directory shared with host (for Claude Code settings)
 - Non-root `developer` user with passwordless sudo
