@@ -164,6 +164,132 @@ def build_image(
     return tag
 
 
+def build_image_headless(
+    client: docker.DockerClient,
+    rocm_version: str,
+    distro: str = "ubuntu-22.04",
+    tag: Optional[str] = None,
+    on_log: Optional[callable] = None,
+) -> str:
+    """Build an image without rich output or SystemExit.
+
+    Raises docker.errors.BuildError on failure instead of exiting.
+    ``on_log`` receives individual log lines if provided.
+    """
+    tag = tag or f"{IMAGE_PREFIX}:{rocm_version}"
+    dockerfile_content = generate_dockerfile(rocm_version, distro=distro)
+
+    image, build_logs = client.images.build(
+        fileobj=io.BytesIO(dockerfile_content.encode()),
+        tag=tag,
+        rm=True,
+        forcerm=True,
+    )
+
+    for chunk in build_logs:
+        if "stream" in chunk and on_log:
+            line = chunk["stream"].rstrip()
+            if line:
+                on_log(line)
+
+    return tag
+
+
+def create_container_headless(
+    rocm_version: str,
+    name: Optional[str] = None,
+    workspace: Optional[str] = None,
+    distro: str = "ubuntu-22.04",
+    on_log: Optional[callable] = None,
+) -> ContainerRecord:
+    """Create a container without rich output or SystemExit.
+
+    Raises normal exceptions instead of calling ``raise SystemExit``.
+    ``on_log`` receives progress messages if provided.
+    """
+    from datetime import datetime, timezone
+
+    client = docker.from_env()
+    state = load_state()
+
+    container_name = make_container_name(name, rocm_version)
+
+    existing = _find_container(client, container_name)
+    if existing:
+        raise ValueError(f"Container {container_name} already exists.")
+
+    image_tag = f"{IMAGE_PREFIX}:{distro}-{rocm_version}"
+    try:
+        client.images.get(image_tag)
+        if on_log:
+            on_log(f"Using existing image {image_tag}")
+    except ImageNotFound:
+        if on_log:
+            on_log(f"Building image {image_tag}...")
+        build_image_headless(client, rocm_version, distro=distro,
+                             tag=image_tag, on_log=on_log)
+
+    config = load_config()
+
+    volumes = {}
+    ws = workspace or os.getcwd()
+    volumes[ws] = {"bind": "/workspace", "mode": "rw"}
+
+    home = Path.home()
+    for src, dst, mode in [
+        (home / ".ssh", "/home/developer/.ssh", "ro"),
+        (home / ".gitconfig", "/home/developer/.gitconfig", "ro"),
+        (home / ".claude", "/home/developer/.claude", "rw"),
+        (home / ".config" / "gh", "/home/developer/.config/gh", "ro"),
+    ]:
+        if src.exists():
+            volumes[str(src)] = {"bind": dst, "mode": mode}
+
+    host_gids = _resolve_device_gids()
+
+    env = {"ROCM_VERSION": rocm_version}
+    env.update(config.env_vars())
+
+    if on_log:
+        on_log(f"Creating container {container_name}...")
+
+    container = client.containers.create(
+        image_tag,
+        name=container_name,
+        hostname=container_name,
+        stdin_open=True,
+        tty=True,
+        detach=True,
+        volumes=volumes,
+        devices=["/dev/kfd", "/dev/dri"],
+        group_add=host_gids,
+        security_opt=["seccomp=unconfined"],
+        labels={
+            LABEL_MANAGED: "true",
+            LABEL_ROCM_VERSION: rocm_version,
+        },
+        environment=env,
+    )
+
+    container.start()
+
+    record = ContainerRecord(
+        name=container_name,
+        rocm_version=rocm_version,
+        created_at=datetime.now(timezone.utc).isoformat(),
+        container_id=container.id,
+        image_id=image_tag,
+        workspace_mount=ws,
+    )
+    state.add(record)
+    state.current = container_name
+    save_state(state)
+
+    if on_log:
+        on_log(f"Container {container_name} created and started.")
+    return record
+
+
 def create_container(
     rocm_version: str,
     name: Optional[str] = None,
@@ -172,7 +298,6 @@ def create_container(
     distro: str = "ubuntu-22.04",
 ) -> ContainerRecord:
     client = get_client()
-    state = load_state()
 
     host = detect_host()
     print_host_info(host)
@@ -198,82 +323,28 @@ def create_container(
         )
         raise SystemExit(1)
 
-    image_tag = f"{IMAGE_PREFIX}:{distro}-{rocm_version}"
-    try:
-        client.images.get(image_tag)
-        console.print(f"[dim]Using existing image {image_tag}[/dim]")
-    except ImageNotFound:
-        build_image(client, rocm_version, distro=distro, tag=image_tag)
-
-    config = load_config()
-
-    volumes = {}
-    ws = workspace or os.getcwd()
-    volumes[ws] = {"bind": "/workspace", "mode": "rw"}
-
-    home = Path.home()
-    ssh_dir = home / ".ssh"
-    if ssh_dir.is_dir():
-        volumes[str(ssh_dir)] = {"bind": "/home/developer/.ssh", "mode": "ro"}
-
-    gitconfig = home / ".gitconfig"
-    if gitconfig.is_file():
-        volumes[str(gitconfig)] = {"bind": "/home/developer/.gitconfig", "mode": "ro"}
-
-    claude_dir = home / ".claude"
-    if claude_dir.is_dir():
-        volumes[str(claude_dir)] = {"bind": "/home/developer/.claude", "mode": "rw"}
-
-    gh_dir = home / ".config" / "gh"
-    if gh_dir.is_dir():
-        volumes[str(gh_dir)] = {"bind": "/home/developer/.config/gh", "mode": "ro"}
-
-    host_gids = _resolve_device_gids()
-
-    env = {"ROCM_VERSION": rocm_version}
-    env.update(config.env_vars())
-
     console.print(
         f"[cyan]Creating container [bold]{container_name}[/bold] "
         f"(ROCm {rocm_version})...[/cyan]"
     )
 
-    container = client.containers.create(
-        image_tag,
-        name=container_name,
-        hostname=container_name,
-        stdin_open=True,
-        tty=True,
-        detach=True,
-        volumes=volumes,
-        devices=["/dev/kfd", "/dev/dri"],
-        group_add=host_gids,
-        security_opt=["seccomp=unconfined"],
-        labels={
-            LABEL_MANAGED: "true",
-            LABEL_ROCM_VERSION: rocm_version,
-        },
-        environment=env,
-    )
+    def _cli_log(msg: str) -> None:
+        console.print(f"  [dim]{msg}[/dim]")
 
-    container.start()
-
-    from datetime import datetime, timezone
-
-    record = ContainerRecord(
-        name=container_name,
-        rocm_version=rocm_version,
-        created_at=datetime.now(timezone.utc).isoformat(),
-        container_id=container.id,
-        image_id=image_tag,
-        workspace_mount=ws,
-    )
-    state.add(record)
-    state.current = container_name
-    save_state(state)
+    try:
+        record = create_container_headless(
+            rocm_version=rocm_version,
+            name=name,
+            workspace=workspace,
+            distro=distro,
+            on_log=_cli_log,
+        )
+    except ValueError as e:
+        console.print(f"[yellow]{e}[/yellow]")
+        raise SystemExit(1)
 
     console.print(
-        f"[green]Container [bold]{container_name}[/bold] created and started "
+        f"[green]Container [bold]{record.name}[/bold] created and started "
         f"(ROCm {rocm_version})[/green]"
     )
     return record

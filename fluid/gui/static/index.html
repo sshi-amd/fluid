@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fluid</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar">
+      <div class="sidebar-logo">
+        <span class="logo-dot"></span>
+        <span class="logo-text">Fluid</span>
+      </div>
+      <nav class="sidebar-nav">
+        <button class="nav-item active">Home</button>
+      </nav>
+      <div class="sidebar-footer">v0.1.0</div>
+    </aside>
+
+    <main id="main">
+      <header id="header">
+        <div class="header-info">
+          <h1 class="header-title">Containers</h1>
+          <span id="header-count" class="header-subtitle">0 containers</span>
+        </div>
+        <div class="header-actions">
+          <button class="btn btn-secondary" onclick="refreshContainers()">Refresh</button>
+          <button class="btn btn-secondary" onclick="showAddExistingDialog()">Add Existing</button>
+          <button class="btn btn-primary" onclick="showCreateDialog()">+ New Container</button>
+        </div>
+      </header>
+
+      <div id="content">
+        <div id="container-grid"></div>
+        <div id="empty-state">
+          <div class="empty-icon">&#9671;</div>
+          <div class="empty-text">No containers on the dashboard yet</div>
+          <div class="empty-hint">Click "+ New Container" or "Add Existing" to get started.</div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Create Container Dialog -->
+  <div id="create-dialog" class="dialog-overlay" style="display:none">
+    <div class="dialog">
+      <h2 class="dialog-title">Create New Container</h2>
+      <p class="dialog-subtitle">Configure a new ROCm development container with Claude Code.</p>
+      <label class="field-label">Container Name</label>
+      <input type="text" id="create-name" class="field-input" placeholder="e.g. my-project (optional)">
+      <label class="field-label">ROCm Version</label>
+      <div class="combo-box" id="combo-version">
+        <input type="text" class="field-input combo-input" id="create-version"
+               placeholder="e.g. 6.3 or type a custom version" autocomplete="off">
+        <button class="combo-toggle" type="button">&#9662;</button>
+        <div class="combo-dropdown" id="combo-version-list"></div>
+      </div>
+      <label class="field-label">Base Distribution</label>
+      <div class="combo-box" id="combo-distro">
+        <input type="text" class="field-input combo-input" id="create-distro"
+               placeholder="e.g. ubuntu-22.04" autocomplete="off">
+        <button class="combo-toggle" type="button">&#9662;</button>
+        <div class="combo-dropdown" id="combo-distro-list"></div>
+      </div>
+      <label class="field-label">Workspace Directory</label>
+      <input type="text" id="create-workspace" class="field-input" placeholder="Leave empty for server working directory">
+      <div class="dialog-buttons">
+        <button class="btn btn-secondary" onclick="hideDialog('create-dialog')">Cancel</button>
+        <button class="btn btn-primary" onclick="submitCreate()">Create Container</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Existing Dialog -->
+  <div id="add-dialog" class="dialog-overlay" style="display:none">
+    <div class="dialog">
+      <h2 class="dialog-title">Add Existing Containers</h2>
+      <p class="dialog-subtitle">Select Fluid containers to add to your dashboard.</p>
+      <div id="add-list" class="add-list"></div>
+      <div id="add-status" class="dialog-status">Loading...</div>
+      <div class="dialog-buttons">
+        <button class="btn btn-secondary" onclick="hideDialog('add-dialog')">Cancel</button>
+        <button class="btn btn-primary" onclick="submitAddExisting()">Add Selected</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
