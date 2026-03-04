@@ -85,6 +85,49 @@ def list_managed_containers(client: docker.DockerClient) -> list[Container]:
     )
 
 
+def list_managed_images(client: docker.DockerClient) -> list:
+    return client.images.list(filters={"label": f"{LABEL_MANAGED}=true"})
+
+
+def remove_images(force: bool = False) -> None:
+    client = get_client()
+    images = list_managed_images(client)
+
+    if not images:
+        console.print("[dim]No fluid images found.[/dim]")
+        return
+
+    if not force:
+        containers = list_managed_containers(client)
+        in_use_ids = {c.image.id for c in containers}
+        skipped = []
+        to_remove = []
+        for img in images:
+            if img.id in in_use_ids:
+                skipped.append(img)
+            else:
+                to_remove.append(img)
+
+        if skipped:
+            tags = [img.tags[0] if img.tags else img.short_id for img in skipped]
+            console.print(
+                f"[yellow]Skipping {len(skipped)} image(s) in use by containers: "
+                f"{', '.join(tags)}[/yellow]"
+            )
+        images = to_remove
+
+    if not images:
+        console.print("[dim]No unused fluid images to remove.[/dim]")
+        return
+
+    for img in images:
+        tag = img.tags[0] if img.tags else img.short_id
+        console.print(f"[yellow]Removing image [bold]{tag}[/bold]...[/yellow]")
+        client.images.remove(img.id, force=force)
+
+    console.print(f"[green]Removed {len(images)} image(s).[/green]")
+
+
 def build_image(
     client: docker.DockerClient,
     rocm_version: str,
@@ -368,6 +411,39 @@ def _find_editor() -> str:
         "[dim]Install Cursor or VS Code and ensure the CLI is on your PATH.[/dim]"
     )
     raise SystemExit(1)
+
+
+def open_claude_code(name: str) -> None:
+    """Open Claude Code CLI attached to a running fluid container."""
+    client = get_client()
+    state = load_state()
+
+    container = _find_container(client, name)
+    if not container:
+        full_name = f"{CONTAINER_PREFIX}-{name}"
+        container = _find_container(client, full_name)
+        if container:
+            name = full_name
+
+    if not container:
+        console.print(f"[red]Container [bold]{name}[/bold] not found.[/red]")
+        raise SystemExit(1)
+
+    if container.status != "running":
+        console.print(f"[cyan]Starting container [bold]{name}[/bold]...[/cyan]")
+        container.start()
+
+    state.current = name
+    save_state(state)
+
+    console.print(
+        f"[green]Opening Claude Code in [bold]{name}[/bold] "
+        f"(ROCm {container.labels.get(LABEL_ROCM_VERSION, '?')})...[/green]"
+    )
+    subprocess.run(
+        ["docker", "exec", "-it", name, "claude"],
+    )
+    _handle_post_exit(name)
 
 
 def open_in_editor(name: str) -> None:

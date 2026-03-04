@@ -150,6 +150,32 @@ def code(
 
 
 @app.command()
+def claude(
+    name: Optional[str] = typer.Option(
+        None,
+        "-n",
+        "--name",
+        help="Container to open Claude Code in. Defaults to current container.",
+        autocompletion=_complete_container_name,
+    ),
+) -> None:
+    """Open Claude Code CLI attached to a container."""
+    from fluid.docker_manager import open_claude_code
+
+    if not name:
+        state = load_state()
+        if not state.current:
+            console.print(
+                "[red]No container specified and no current container. "
+                "Use [bold]fluid create[/bold] first.[/red]"
+            )
+            raise typer.Exit(1)
+        name = state.current
+
+    open_claude_code(name)
+
+
+@app.command()
 def kill(
     name: Optional[str] = typer.Option(
         None,
@@ -171,6 +197,20 @@ def kill(
         kill_all_containers()
     else:
         kill_container(name)
+
+
+@app.command()
+def clean(
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Also remove images still in use by containers.",
+    ),
+) -> None:
+    """Remove Docker images built by fluid."""
+    from fluid.docker_manager import remove_images
+
+    remove_images(force=force)
 
 
 @app.command(name="exit")
