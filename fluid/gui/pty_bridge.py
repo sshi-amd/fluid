@@ -26,19 +26,19 @@ class PtySession:
 
     def spawn(self, cols: int = 120, rows: int = 30) -> int:
         """Fork a PTY running docker exec. Returns the master fd."""
-        pid, fd = pty.openpty()
+        master, slave = pty.openpty()
 
         child_pid = os.fork()
         if child_pid == 0:
-            os.close(pid)
+            os.close(master)
             os.setsid()
-            fcntl.ioctl(fd, termios.TIOCSCTTY, 0)
+            fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
 
-            os.dup2(fd, 0)
-            os.dup2(fd, 1)
-            os.dup2(fd, 2)
-            if fd > 2:
-                os.close(fd)
+            os.dup2(slave, 0)
+            os.dup2(slave, 1)
+            os.dup2(slave, 2)
+            if slave > 2:
+                os.close(slave)
 
             cmd = ["docker", "exec", "-it"]
             for key, val in self.extra_env.items():
@@ -47,12 +47,12 @@ class PtySession:
 
             os.execvp("docker", cmd)
         else:
-            os.close(fd)
-            self._master_fd = pid
+            os.close(slave)
+            self._master_fd = master
             self._pid = child_pid
             self.resize(cols, rows)
-            _set_nonblocking(pid)
-            return pid
+            _set_nonblocking(master)
+            return master
 
     def resize(self, cols: int, rows: int) -> None:
         if self._master_fd is not None:
@@ -116,6 +116,38 @@ class PtySession:
             return pid == 0
         except ChildProcessError:
             return False
+
+
+class HostPtySession(PtySession):
+    """PTY session running a local shell on the host machine (not in a container)."""
+
+    def __init__(self, shell: Optional[str] = None) -> None:
+        super().__init__(container_name="__host__", command=shell or "/bin/bash")
+
+    def spawn(self, cols: int = 120, rows: int = 30) -> int:
+        master, slave = pty.openpty()
+
+        child_pid = os.fork()
+        if child_pid == 0:
+            os.close(master)
+            os.setsid()
+            fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+
+            os.dup2(slave, 0)
+            os.dup2(slave, 1)
+            os.dup2(slave, 2)
+            if slave > 2:
+                os.close(slave)
+
+            shell = self.command
+            os.execvp(shell, [shell])
+        else:
+            os.close(slave)
+            self._master_fd = master
+            self._pid = child_pid
+            self.resize(cols, rows)
+            _set_nonblocking(master)
+            return master
 
 
 def _set_nonblocking(fd: int) -> None:

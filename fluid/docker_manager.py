@@ -556,9 +556,11 @@ def open_in_editor(name: str) -> None:
     state.current = name
     save_state(state)
 
+    import json as _json
     editor = _find_editor()
-    hex_name = name.encode().hex()
-    uri = f"vscode-remote://attached-container+{hex_name}/workspace"
+    config_json = _json.dumps({"containerName": "/" + name})
+    hex_config = config_json.encode().hex()
+    uri = f"vscode-remote://attached-container+{hex_config}/workspace"
 
     console.print(
         f"[green]Opening [bold]{name}[/bold] in [bold]{editor}[/bold]...[/green]"

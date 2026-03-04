@@ -11,6 +11,7 @@ let pollInterval = null;
 document.addEventListener("DOMContentLoaded", async () => {
   await loadConfig();
   await refreshContainers();
+  initHostTerminal();
   pollInterval = setInterval(pollStatuses, 3000);
 });
 
@@ -134,13 +135,10 @@ function initComboBox(wrapperId, inputId, listId, options, defaultValue) {
 
 async function refreshContainers() {
   const containers = await api("GET", "/containers");
-  const grid = document.getElementById("container-grid");
-  const existing = new Set(cards.keys());
 
   for (const c of containers) {
     if (cards.has(c.name)) {
       updateCardStatus(c.name, c.status);
-      existing.delete(c.name);
     } else {
       addCard(c);
     }
@@ -167,15 +165,13 @@ async function pollStatuses() {
   if (cards.size === 0) return;
   try {
     const containers = await api("GET", "/containers");
-    const serverNames = new Set();
     for (const c of containers) {
-      serverNames.add(c.name);
       if (cards.has(c.name)) {
         updateCardStatus(c.name, c.status);
       }
     }
   } catch (e) {
-    // server unreachable, ignore
+    // server unreachable
   }
 }
 
@@ -193,6 +189,7 @@ function addCard(container) {
     ? `ROCm ${container.rocm_version}` : "";
   const workspaceText = container.workspace
     ? ` · ${container.workspace}` : "";
+  const isRunning = container.status === "running";
 
   card.innerHTML = `
     <div class="card-header">
@@ -206,18 +203,21 @@ function addCard(container) {
     </div>
     <div class="card-terminal" id="term-wrap-${container.name}">
       <div class="terminal-placeholder" id="term-ph-${container.name}">
-        ${container.status === "running" ? "Click Shell or Claude to connect" : "Container stopped"}
+        ${isRunning ? "Click Shell or Claude to connect" : "Container stopped"}
       </div>
     </div>
     <div class="card-footer">
       <button class="btn btn-secondary" id="startstop-${container.name}"
-        onclick="toggleStartStop('${container.name}')">${container.status === "running" ? "Stop" : "Start"}</button>
-      <button class="btn btn-primary" id="claude-btn-${container.name}"
-        onclick="connectTerminal('${container.name}', 'claude')"
-        ${container.status !== "running" ? "disabled" : ""}>Claude</button>
-      <button class="btn btn-secondary" id="shell-btn-${container.name}"
-        onclick="connectTerminal('${container.name}', '/bin/bash')"
-        ${container.status !== "running" ? "disabled" : ""}>Shell</button>
+        onclick="toggleStartStop('${container.name}')">${isRunning ? "Stop" : "Start"}</button>
+      <button class="btn btn-primary tab-btn active" id="claude-btn-${container.name}"
+        onclick="switchSession('${container.name}', 'claude')"
+        ${!isRunning ? "disabled" : ""}>Claude</button>
+      <button class="btn btn-secondary tab-btn" id="shell-btn-${container.name}"
+        onclick="switchSession('${container.name}', '/bin/bash')"
+        ${!isRunning ? "disabled" : ""}>Shell</button>
+      <button class="btn btn-secondary" id="code-btn-${container.name}"
+        onclick="openCode('${container.name}')"
+        ${!isRunning ? "disabled" : ""}>Code</button>
     </div>
   `;
 
@@ -225,10 +225,8 @@ function addCard(container) {
 
   cards.set(container.name, {
     container,
-    terminal: null,
-    fitAddon: null,
-    ws: null,
-    currentCmd: null,
+    sessions: {},
+    activeCmd: null,
   });
 
   updateEmptyState();
@@ -237,13 +235,9 @@ function addCard(container) {
 function removeCard(name) {
   const state = cards.get(name);
   if (!state) return;
-  if (state.ws) {
-    state.ws.close();
-    state.ws = null;
-  }
-  if (state.terminal) {
-    state.terminal.dispose();
-    state.terminal = null;
+  for (const sess of Object.values(state.sessions)) {
+    if (sess.ws) sess.ws.close();
+    if (sess.terminal) sess.terminal.dispose();
   }
   const el = document.getElementById(`card-${name}`);
   if (el) el.remove();
@@ -255,8 +249,6 @@ function removeCard(name) {
 
 function statusToCssClass(status) {
   if (status === "running") return "running";
-  if (status === "exited" || status === "stopped" || status === "created")
-    return "stopped";
   return "stopped";
 }
 
@@ -274,7 +266,7 @@ function updateCardStatus(name, status) {
   let cssClass = statusToCssClass(status);
   let label = statusToLabel(status);
 
-  if (state.currentCmd === "claude" && status === "running") {
+  if (state.activeCmd === "claude" && status === "running") {
     cssClass = "claude-active";
     label = "claude active";
   }
@@ -289,11 +281,10 @@ function updateCardStatus(name, status) {
   const startStop = document.getElementById(`startstop-${name}`);
   if (startStop) startStop.textContent = isRunning ? "Stop" : "Start";
 
-  const claudeBtn = document.getElementById(`claude-btn-${name}`);
-  if (claudeBtn) claudeBtn.disabled = !isRunning;
-
-  const shellBtn = document.getElementById(`shell-btn-${name}`);
-  if (shellBtn) shellBtn.disabled = !isRunning;
+  for (const id of [`claude-btn-${name}`, `shell-btn-${name}`, `code-btn-${name}`]) {
+    const btn = document.getElementById(id);
+    if (btn) btn.disabled = !isRunning;
+  }
 
   const ph = document.getElementById(`term-ph-${name}`);
   if (ph) {
@@ -305,90 +296,62 @@ function updateCardStatus(name, status) {
   state.container.status = status;
 }
 
-// ─── Terminal connection ───
+// ─── Session management (persistent sessions per card) ───
 
-function connectTerminal(name, cmd) {
+function switchSession(name, cmd) {
   const state = cards.get(name);
   if (!state) return;
-
-  if (state.ws) {
-    state.ws.close();
-    state.ws = null;
-  }
-  if (state.terminal) {
-    state.terminal.dispose();
-    state.terminal = null;
-    state.fitAddon = null;
-  }
-
-  const ph = document.getElementById(`term-ph-${name}`);
-  if (ph) ph.remove();
 
   const wrap = document.getElementById(`term-wrap-${name}`);
   if (!wrap) return;
 
+  // hide all existing session divs
+  for (const [key, sess] of Object.entries(state.sessions)) {
+    if (sess.el) sess.el.style.display = "none";
+  }
+
+  // remove placeholder if present
+  const ph = document.getElementById(`term-ph-${name}`);
+  if (ph) ph.style.display = "none";
+
+  state.activeCmd = cmd;
+  updateTabButtons(name, cmd);
+
+  // reuse existing session if alive
+  const existing = state.sessions[cmd];
+  if (existing && existing.ws && existing.ws.readyState === WebSocket.OPEN) {
+    existing.el.style.display = "block";
+    requestAnimationFrame(() => existing.fitAddon.fit());
+    updateCardStatus(name, state.container.status);
+    return;
+  }
+
+  // clean up dead session
+  if (existing) {
+    if (existing.ws) existing.ws.close();
+    if (existing.terminal) existing.terminal.dispose();
+    if (existing.el) existing.el.remove();
+    delete state.sessions[cmd];
+  }
+
+  // create new session
   const termDiv = document.createElement("div");
-  termDiv.style.height = "100%";
-  wrap.innerHTML = "";
+  termDiv.className = "session-terminal";
   wrap.appendChild(termDiv);
 
-  const term = new Terminal({
-    theme: {
-      background: "#09090b",
-      foreground: "#d4d4d8",
-      cursor: "#d4d4d8",
-      selectionBackground: "#3a3a50",
-      black: "#18181b",
-      red: "#ef4444",
-      green: "#22c55e",
-      yellow: "#eab308",
-      blue: "#3b82f6",
-      magenta: "#a855f7",
-      cyan: "#06b6d4",
-      white: "#e4e4e7",
-      brightBlack: "#71717a",
-      brightRed: "#f87171",
-      brightGreen: "#4ade80",
-      brightYellow: "#facc15",
-      brightBlue: "#60a5fa",
-      brightMagenta: "#c084fc",
-      brightCyan: "#22d3ee",
-      brightWhite: "#fafafa",
-    },
-    fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace",
-    fontSize: 13,
-    cursorBlink: true,
-    allowProposedApi: true,
-  });
+  const term = createTerminal(termDiv);
+  const fitAddon = term._fitAddon;
 
-  const fitAddon = new FitAddon.FitAddon();
-  term.loadAddon(fitAddon);
-  term.open(termDiv);
-
-  requestAnimationFrame(() => {
-    fitAddon.fit();
-  });
-
-  state.terminal = term;
-  state.fitAddon = fitAddon;
-  state.currentCmd = cmd;
-
-  if (cmd === "claude") {
-    updateCardStatus(name, "running");
-    const dot = document.getElementById(`dot-${name}`);
-    if (dot) dot.className = "status-dot claude-active";
-    const statusEl = document.getElementById(`status-${name}`);
-    if (statusEl) statusEl.textContent = "claude active";
-  }
+  const sess = { terminal: term, fitAddon, el: termDiv, ws: null };
+  state.sessions[cmd] = sess;
 
   const wsUrl = `${WS_BASE}/ws/terminal/${encodeURIComponent(name)}?cmd=${encodeURIComponent(cmd)}`;
   const ws = new WebSocket(wsUrl);
   ws.binaryType = "arraybuffer";
-  state.ws = ws;
+  sess.ws = ws;
 
   ws.onopen = () => {
-    const dims = { type: "resize", cols: term.cols, rows: term.rows };
-    ws.send(JSON.stringify(dims));
+    ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
   };
 
   ws.onmessage = (event) => {
@@ -401,9 +364,7 @@ function connectTerminal(name, cmd) {
 
   ws.onclose = () => {
     term.write("\r\n\x1b[90m[session ended]\x1b[0m\r\n");
-    state.ws = null;
-    state.currentCmd = null;
-    updateCardStatus(name, state.container.status);
+    sess.ws = null;
   };
 
   ws.onerror = () => {
@@ -416,25 +377,93 @@ function connectTerminal(name, cmd) {
     }
   });
 
+  attachClipboardHandlers(term, ws);
+  attachTermContextMenu(termDiv, term, ws);
+
+  const resizeObserver = new ResizeObserver(() => {
+    requestAnimationFrame(() => {
+      fitAddon.fit();
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+      }
+    });
+  });
+  resizeObserver.observe(wrap);
+
+  updateCardStatus(name, state.container.status);
+}
+
+function updateTabButtons(name, activeCmd) {
+  const claudeBtn = document.getElementById(`claude-btn-${name}`);
+  const shellBtn = document.getElementById(`shell-btn-${name}`);
+  if (claudeBtn) {
+    claudeBtn.className = `btn tab-btn ${activeCmd === "claude" ? "btn-primary active" : "btn-secondary"}`;
+  }
+  if (shellBtn) {
+    shellBtn.className = `btn tab-btn ${activeCmd === "/bin/bash" ? "btn-primary active" : "btn-secondary"}`;
+  }
+}
+
+// ─── Terminal factory ───
+
+const TERM_THEME = {
+  background: "#09090b",
+  foreground: "#d4d4d8",
+  cursor: "#d4d4d8",
+  selectionBackground: "#3a3a50",
+  black: "#18181b",
+  red: "#ef4444",
+  green: "#22c55e",
+  yellow: "#eab308",
+  blue: "#3b82f6",
+  magenta: "#a855f7",
+  cyan: "#06b6d4",
+  white: "#e4e4e7",
+  brightBlack: "#71717a",
+  brightRed: "#f87171",
+  brightGreen: "#4ade80",
+  brightYellow: "#facc15",
+  brightBlue: "#60a5fa",
+  brightMagenta: "#c084fc",
+  brightCyan: "#22d3ee",
+  brightWhite: "#fafafa",
+};
+
+function createTerminal(container) {
+  const term = new Terminal({
+    theme: TERM_THEME,
+    fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace",
+    fontSize: 13,
+    cursorBlink: true,
+    allowProposedApi: true,
+  });
+
+  const fitAddon = new FitAddon.FitAddon();
+  term.loadAddon(fitAddon);
+  term.open(container);
+  term._fitAddon = fitAddon;
+
+  requestAnimationFrame(() => fitAddon.fit());
+
+  return term;
+}
+
+function attachClipboardHandlers(term, ws) {
   term.attachCustomKeyEventHandler((e) => {
     if (e.type !== "keydown") return true;
 
-    const isCopy = (e.ctrlKey && e.shiftKey && e.key === "C") ||
-                   (e.ctrlKey && e.key === "c" && term.hasSelection());
-    const isPaste = (e.ctrlKey && e.shiftKey && e.key === "V") ||
-                    (e.ctrlKey && e.key === "v");
+    const isCopy = e.ctrlKey && e.shiftKey && (e.key === "C" || e.code === "KeyC");
+    const isPaste = e.ctrlKey && e.shiftKey && (e.key === "V" || e.code === "KeyV");
 
     if (isCopy) {
       const sel = term.getSelection();
-      if (sel) {
-        navigator.clipboard.writeText(sel).catch(() => {});
-      }
+      if (sel) navigator.clipboard.writeText(sel).catch(() => {});
       return false;
     }
 
     if (isPaste) {
       navigator.clipboard.readText().then((text) => {
-        if (text && ws.readyState === WebSocket.OPEN) {
+        if (text && ws && ws.readyState === WebSocket.OPEN) {
           ws.send(new TextEncoder().encode(text));
         }
       }).catch(() => {});
@@ -443,8 +472,10 @@ function connectTerminal(name, cmd) {
 
     return true;
   });
+}
 
-  termDiv.addEventListener("contextmenu", (e) => {
+function attachTermContextMenu(el, term, ws) {
+  el.addEventListener("contextmenu", (e) => {
     e.preventDefault();
     closeMenu();
 
@@ -468,7 +499,7 @@ function connectTerminal(name, cmd) {
     pasteBtn.textContent = "Paste";
     pasteBtn.onclick = () => {
       navigator.clipboard.readText().then((text) => {
-        if (text && ws.readyState === WebSocket.OPEN) {
+        if (text && ws && ws.readyState === WebSocket.OPEN) {
           ws.send(new TextEncoder().encode(text));
         }
       }).catch(() => {});
@@ -489,16 +520,15 @@ function connectTerminal(name, cmd) {
     };
     setTimeout(() => document.addEventListener("click", dismiss), 0);
   });
+}
 
-  const resizeObserver = new ResizeObserver(() => {
-    requestAnimationFrame(() => {
-      fitAddon.fit();
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
-      }
-    });
-  });
-  resizeObserver.observe(wrap);
+// ─── Code button ───
+
+async function openCode(name) {
+  const result = await api("POST", `/containers/${encodeURIComponent(name)}/code`);
+  if (result.error) {
+    alert(result.error);
+  }
 }
 
 // ─── Start / Stop ───
@@ -508,9 +538,8 @@ async function toggleStartStop(name) {
   if (!state) return;
 
   if (state.container.status === "running") {
-    if (state.ws) {
-      state.ws.close();
-      state.ws = null;
+    for (const sess of Object.values(state.sessions)) {
+      if (sess.ws) sess.ws.close();
     }
     await api("POST", `/containers/${encodeURIComponent(name)}/stop`);
     updateCardStatus(name, "exited");
@@ -536,8 +565,9 @@ function showCardMenu(event, name) {
   menu.className = "context-menu";
 
   const items = [
-    { label: "Shell", action: () => connectTerminal(name, "/bin/bash"), disabled: !isRunning },
-    { label: "Claude", action: () => connectTerminal(name, "claude"), disabled: !isRunning },
+    { label: "Shell", action: () => switchSession(name, "/bin/bash"), disabled: !isRunning },
+    { label: "Claude", action: () => switchSession(name, "claude"), disabled: !isRunning },
+    { label: "Open in Editor", action: () => openCode(name), disabled: !isRunning },
     { sep: true },
     { label: isRunning ? "Stop" : "Start", action: () => toggleStartStop(name) },
     { sep: true },
@@ -586,6 +616,107 @@ async function removeContainerAction(name) {
   await api("DELETE", `/containers/${encodeURIComponent(name)}`);
   removeCard(name);
 }
+
+// ─── Host terminal (bottom panel) ───
+
+let hostTermState = { terminal: null, fitAddon: null, ws: null };
+
+function initHostTerminal() {
+  const wrap = document.getElementById("host-terminal-wrap");
+  if (!wrap) return;
+
+  const term = createTerminal(wrap);
+  const fitAddon = term._fitAddon;
+  hostTermState.terminal = term;
+  hostTermState.fitAddon = fitAddon;
+
+  const wsUrl = `${WS_BASE}/ws/host-terminal`;
+  const ws = new WebSocket(wsUrl);
+  ws.binaryType = "arraybuffer";
+  hostTermState.ws = ws;
+
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+  };
+
+  ws.onmessage = (event) => {
+    if (event.data instanceof ArrayBuffer) {
+      term.write(new Uint8Array(event.data));
+    } else {
+      term.write(event.data);
+    }
+  };
+
+  ws.onclose = () => {
+    term.write("\r\n\x1b[90m[host session ended]\x1b[0m\r\n");
+    hostTermState.ws = null;
+  };
+
+  term.onData((data) => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(new TextEncoder().encode(data));
+    }
+  });
+
+  attachClipboardHandlers(term, ws);
+  attachTermContextMenu(wrap, term, ws);
+
+  const resizeObserver = new ResizeObserver(() => {
+    requestAnimationFrame(() => {
+      fitAddon.fit();
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+      }
+    });
+  });
+  resizeObserver.observe(wrap);
+}
+
+function toggleHostTerminal() {
+  const panel = document.getElementById("host-terminal");
+  panel.classList.toggle("collapsed");
+  if (hostTermState.fitAddon) {
+    requestAnimationFrame(() => hostTermState.fitAddon.fit());
+  }
+}
+
+(function initHostTerminalDrag() {
+  const handle = document.getElementById("host-terminal-drag");
+  const panel = document.getElementById("host-terminal");
+  if (!handle || !panel) return;
+
+  let startY = 0;
+  let startH = 0;
+
+  handle.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    startY = e.clientY;
+    startH = panel.offsetHeight;
+    handle.classList.add("dragging");
+    document.body.style.cursor = "ns-resize";
+    document.body.style.userSelect = "none";
+
+    function onMove(ev) {
+      const delta = startY - ev.clientY;
+      const newH = Math.max(80, Math.min(startH + delta, window.innerHeight * 0.8));
+      panel.style.height = `${newH}px`;
+    }
+
+    function onUp() {
+      handle.classList.remove("dragging");
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      if (hostTermState.fitAddon) {
+        requestAnimationFrame(() => hostTermState.fitAddon.fit());
+      }
+    }
+
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  });
+})();
 
 // ─── Create dialog ───
 

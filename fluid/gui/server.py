@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from fluid.gui.pty_bridge import PtySession
+from fluid.gui.pty_bridge import HostPtySession, PtySession
 
 logger = logging.getLogger("fluid.gui")
 
@@ -264,6 +264,109 @@ async def terminal_websocket(websocket: WebSocket, name: str,
                     if parsed.get("type") == "resize":
                         session.resize(parsed.get("cols", 120),
                                        parsed.get("rows", 30))
+                        continue
+                except (json.JSONDecodeError, TypeError):
+                    pass
+                session.write(text.encode())
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        read_task.cancel()
+        try:
+            await read_task
+        except asyncio.CancelledError:
+            pass
+        session.close()
+        _active_sessions.pop(session_key, None)
+
+
+@app.post("/api/containers/{name}/code")
+def open_in_editor(name: str) -> dict:
+    import shutil
+    import subprocess
+
+    import docker
+    from fluid.config import CONTAINER_PREFIX
+
+    client = docker.from_env()
+    try:
+        container = client.containers.get(name)
+    except docker.errors.NotFound:
+        try:
+            container = client.containers.get(f"{CONTAINER_PREFIX}-{name}")
+            name = container.name
+        except docker.errors.NotFound:
+            return {"error": f"Container {name} not found"}
+
+    if container.status != "running":
+        return {"error": "Container is not running"}
+
+    editor = None
+    for cmd in ("cursor", "code"):
+        if shutil.which(cmd):
+            editor = cmd
+            break
+    if not editor:
+        return {"error": "Neither cursor nor code found on PATH"}
+
+    import json as _json
+    config_json = _json.dumps({"containerName": "/" + container.name})
+    hex_config = config_json.encode().hex()
+    uri = f"vscode-remote://attached-container+{hex_config}/workspace"
+    subprocess.Popen(
+        [editor, "--folder-uri", uri],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return {"status": "opened", "editor": editor, "name": container.name}
+
+
+# --- WebSocket host terminal ---
+
+@app.websocket("/ws/host-terminal")
+async def host_terminal_websocket(websocket: WebSocket):
+    await websocket.accept()
+
+    session = HostPtySession()
+    try:
+        session.spawn(cols=120, rows=10)
+    except Exception as e:
+        await websocket.close(code=4500, reason=str(e))
+        return
+
+    session_key = f"__host__:{id(session)}"
+    _active_sessions[session_key] = session
+
+    async def _read_pty():
+        while session.is_alive:
+            try:
+                data = await session.read()
+                if data:
+                    await websocket.send_bytes(data)
+                else:
+                    await asyncio.sleep(0.02)
+            except Exception:
+                break
+
+    read_task = asyncio.create_task(_read_pty())
+
+    try:
+        while True:
+            msg = await websocket.receive()
+            if msg.get("type") == "websocket.disconnect":
+                break
+
+            if "bytes" in msg and msg["bytes"]:
+                session.write(msg["bytes"])
+            elif "text" in msg and msg["text"]:
+                text = msg["text"]
+                try:
+                    parsed = json.loads(text)
+                    if parsed.get("type") == "resize":
+                        session.resize(parsed.get("cols", 120),
+                                       parsed.get("rows", 10))
                         continue
                 except (json.JSONDecodeError, TypeError):
                     pass

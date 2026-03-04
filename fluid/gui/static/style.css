@@ -406,6 +406,96 @@ body {
   font-size: 11px;
 }
 
+/* Tab-style footer buttons */
+.tab-btn.active {
+  font-weight: 700;
+}
+
+/* Session terminals inside card */
+.session-terminal {
+  height: 100%;
+}
+
+.session-terminal .xterm {
+  height: 100%;
+}
+
+/* Host terminal panel */
+#host-terminal {
+  display: flex;
+  flex-direction: column;
+  height: 220px;
+  min-height: 36px;
+  max-height: 80vh;
+}
+
+#host-terminal.collapsed {
+  height: 36px !important;
+}
+
+#host-terminal.collapsed #host-terminal-wrap {
+  display: none;
+}
+
+#host-terminal.collapsed .host-terminal-drag {
+  display: none;
+}
+
+.host-terminal-drag {
+  height: 5px;
+  cursor: ns-resize;
+  background: var(--border);
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.host-terminal-drag:hover,
+.host-terminal-drag.dragging {
+  background: var(--accent);
+}
+
+#host-terminal.collapsed .host-terminal-chevron {
+  transform: rotate(-90deg);
+}
+
+.host-terminal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: var(--surface-raised);
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.host-terminal-header:hover {
+  background: var(--surface);
+}
+
+.host-terminal-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.host-terminal-chevron {
+  font-size: 10px;
+  color: var(--text-dim);
+  transition: transform 0.2s;
+}
+
+#host-terminal-wrap {
+  flex: 1;
+  background: var(--terminal-bg);
+  padding: 2px;
+  min-height: 0;
+}
+
+#host-terminal-wrap .xterm {
+  height: 100%;
+}
+
 /* Dialogs */
 .dialog-overlay {
   position: fixed;
