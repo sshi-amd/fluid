@@ -21,6 +21,7 @@ from fluid.config import (
     LABEL_ROCM_VERSION,
     ContainerRecord,
     State,
+    load_config,
     load_state,
     make_container_name,
     save_state,
@@ -204,6 +205,8 @@ def create_container(
     except ImageNotFound:
         build_image(client, rocm_version, distro=distro, tag=image_tag)
 
+    config = load_config()
+
     volumes = {}
     ws = workspace or os.getcwd()
     volumes[ws] = {"bind": "/workspace", "mode": "rw"}
@@ -217,7 +220,18 @@ def create_container(
     if gitconfig.is_file():
         volumes[str(gitconfig)] = {"bind": "/home/developer/.gitconfig", "mode": "ro"}
 
+    claude_dir = home / ".claude"
+    if claude_dir.is_dir():
+        volumes[str(claude_dir)] = {"bind": "/home/developer/.claude", "mode": "rw"}
+
+    gh_dir = home / ".config" / "gh"
+    if gh_dir.is_dir():
+        volumes[str(gh_dir)] = {"bind": "/home/developer/.config/gh", "mode": "ro"}
+
     host_gids = _resolve_device_gids()
+
+    env = {"ROCM_VERSION": rocm_version}
+    env.update(config.env_vars())
 
     console.print(
         f"[cyan]Creating container [bold]{container_name}[/bold] "
@@ -239,9 +253,7 @@ def create_container(
             LABEL_MANAGED: "true",
             LABEL_ROCM_VERSION: rocm_version,
         },
-        environment={
-            "ROCM_VERSION": rocm_version,
-        },
+        environment=env,
     )
 
     container.start()
@@ -417,6 +429,7 @@ def open_claude_code(name: str) -> None:
     """Open Claude Code CLI attached to a running fluid container."""
     client = get_client()
     state = load_state()
+    config = load_config()
 
     container = _find_container(client, name)
     if not container:
@@ -436,13 +449,16 @@ def open_claude_code(name: str) -> None:
     state.current = name
     save_state(state)
 
+    cmd = ["docker", "exec", "-it"]
+    for key, val in config.env_vars().items():
+        cmd.extend(["-e", f"{key}={val}"])
+    cmd.extend([name, "claude"])
+
     console.print(
         f"[green]Opening Claude Code in [bold]{name}[/bold] "
         f"(ROCm {container.labels.get(LABEL_ROCM_VERSION, '?')})...[/green]"
     )
-    subprocess.run(
-        ["docker", "exec", "-it", name, "claude"],
-    )
+    subprocess.run(cmd)
     _handle_post_exit(name)
 
 

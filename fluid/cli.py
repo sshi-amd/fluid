@@ -21,7 +21,9 @@ from fluid.config import (
     LABEL_MANAGED,
     LABEL_ROCM_VERSION,
     SUPPORTED_DISTROS,
+    load_config,
     load_state,
+    save_config,
 )
 
 app = typer.Typer(
@@ -211,6 +213,118 @@ def clean(
     from fluid.docker_manager import remove_images
 
     remove_images(force=force)
+
+
+def _mask(value: str) -> str:
+    if len(value) <= 8:
+        return "*" * len(value)
+    return value[:4] + "*" * (len(value) - 8) + value[-4:]
+
+
+_CONFIG_KEYS = {
+    "anthropic-key": "anthropic_api_key",
+    "github-token": "github_token",
+}
+
+
+@app.command()
+def config(
+    show: bool = typer.Option(
+        False, "--show", help="Show current config values (masked)."
+    ),
+    set_key: Optional[str] = typer.Option(
+        None,
+        "--set",
+        help=f"Key to set ({', '.join(_CONFIG_KEYS)}).",
+    ),
+    value: Optional[str] = typer.Option(
+        None,
+        "--value",
+        help="Value for the key being set.",
+    ),
+    unset: Optional[str] = typer.Option(
+        None,
+        "--unset",
+        help=f"Key to clear ({', '.join(_CONFIG_KEYS)}).",
+    ),
+) -> None:
+    """View or update fluid auth config (API keys, tokens)."""
+    cfg = load_config()
+
+    if set_key:
+        if set_key not in _CONFIG_KEYS:
+            console.print(
+                f"[red]Unknown key [bold]{set_key}[/bold]. "
+                f"Valid keys: {', '.join(_CONFIG_KEYS)}[/red]"
+            )
+            raise typer.Exit(1)
+        if not value:
+            console.print("[red]Provide [bold]--value[/bold] when using --set.[/red]")
+            raise typer.Exit(1)
+        setattr(cfg, _CONFIG_KEYS[set_key], value)
+        save_config(cfg)
+        console.print(f"[green]Set [bold]{set_key}[/bold].[/green]")
+        return
+
+    if unset:
+        if unset not in _CONFIG_KEYS:
+            console.print(
+                f"[red]Unknown key [bold]{unset}[/bold]. "
+                f"Valid keys: {', '.join(_CONFIG_KEYS)}[/red]"
+            )
+            raise typer.Exit(1)
+        setattr(cfg, _CONFIG_KEYS[unset], None)
+        save_config(cfg)
+        console.print(f"[green]Cleared [bold]{unset}[/bold].[/green]")
+        return
+
+    table = Table(
+        title="Fluid Config",
+        title_style="bold cyan",
+        border_style="dim",
+    )
+    table.add_column("Key", style="bold")
+    table.add_column("Value")
+
+    for display_key, attr in _CONFIG_KEYS.items():
+        val = getattr(cfg, attr)
+        if val:
+            table.add_row(display_key, _mask(val))
+        else:
+            table.add_row(display_key, "[dim]not set[/dim]")
+
+    from pathlib import Path
+
+    home = Path.home()
+    table.add_row("", "")
+    table.add_row(
+        "~/.claude",
+        "[green]found (will mount)[/green]"
+        if (home / ".claude").is_dir()
+        else "[dim]not found[/dim]",
+    )
+    table.add_row(
+        "~/.config/gh",
+        "[green]found (will mount)[/green]"
+        if (home / ".config" / "gh").is_dir()
+        else "[dim]not found[/dim]",
+    )
+    table.add_row(
+        "~/.ssh",
+        "[green]found (will mount)[/green]"
+        if (home / ".ssh").is_dir()
+        else "[dim]not found[/dim]",
+    )
+    table.add_row(
+        "~/.gitconfig",
+        "[green]found (will mount)[/green]"
+        if (home / ".gitconfig").is_file()
+        else "[dim]not found[/dim]",
+    )
+
+    console.print()
+    console.print(table)
+    console.print()
 
 
 @app.command(name="exit")
