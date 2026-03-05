@@ -34,20 +34,37 @@
         </div>
       </header>
 
-      <div id="content">
-        <div id="container-grid"></div>
-        <div id="empty-state">
-          <div class="empty-icon">&#9671;</div>
-          <div class="empty-text">No containers on the dashboard yet</div>
-          <div class="empty-hint">Click "+ New Container" or "Add Existing" to get started.</div>
+      <div id="content-row">
+        <div id="content">
+          <div id="container-grid"></div>
+          <div id="empty-state">
+            <div class="empty-icon">&#9671;</div>
+            <div class="empty-text">No containers on the dashboard yet</div>
+            <div class="empty-hint">Click "+ New Container" or "Add Existing" to get started.</div>
+          </div>
         </div>
+
+        <aside id="build-queue" class="build-queue hidden">
+          <div class="build-queue-header">
+            <span class="build-queue-title">Build Queue</span>
+            <span class="build-queue-count" id="build-queue-count">0</span>
+          </div>
+          <div class="build-queue-list" id="build-queue-list"></div>
+        </aside>
       </div>
 
       <div id="host-terminal">
         <div class="host-terminal-drag" id="host-terminal-drag"></div>
-        <div class="host-terminal-header" onclick="toggleHostTerminal()">
-          <span class="host-terminal-title">Terminal</span>
-          <span class="host-terminal-chevron">&#9662;</span>
+        <div class="host-terminal-toolbar">
+          <div class="ht-toolbar-left" onclick="toggleHostTerminal()">
+            <span class="host-terminal-chevron">&#9662;</span>
+            <span class="host-terminal-title">Terminal</span>
+          </div>
+          <div class="ht-tabs" id="ht-tabs"></div>
+          <div class="ht-toolbar-right">
+            <button class="ht-add-btn" onclick="addHostTab()" title="New Terminal">+</button>
+            <button class="ht-kill-btn" onclick="killActiveHostTab()" title="Kill Terminal">&#x2715;</button>
+          </div>
         </div>
         <div id="host-terminal-wrap"></div>
       </div>

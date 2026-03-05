@@ -226,12 +226,22 @@ function addCard(container) {
     <div class="card-footer">
       <button class="btn btn-secondary" id="startstop-${container.name}"
         onclick="toggleStartStop('${container.name}')">${isRunning ? "Stop" : "Start"}</button>
-      <button class="btn btn-primary tab-btn active" id="claude-btn-${container.name}"
-        onclick="switchSession('${container.name}', 'claude')"
-        ${!isRunning ? "disabled" : ""}>Claude</button>
-      <button class="btn btn-secondary tab-btn" id="shell-btn-${container.name}"
-        onclick="switchSession('${container.name}', '/bin/bash')"
-        ${!isRunning ? "disabled" : ""}>Shell</button>
+      <div class="tab-group">
+        <button class="btn btn-primary tab-btn active" id="claude-btn-${container.name}"
+          onclick="switchSession('${container.name}', 'claude')"
+          ${!isRunning ? "disabled" : ""}>Claude</button>
+        <button class="btn-reload" id="claude-reload-${container.name}"
+          onclick="reloadSession('${container.name}', 'claude')"
+          ${!isRunning ? "disabled" : ""} title="Restart Claude session">&#x21BB;</button>
+      </div>
+      <div class="tab-group">
+        <button class="btn btn-secondary tab-btn" id="shell-btn-${container.name}"
+          onclick="switchSession('${container.name}', '/bin/bash')"
+          ${!isRunning ? "disabled" : ""}>Shell</button>
+        <button class="btn-reload" id="shell-reload-${container.name}"
+          onclick="reloadSession('${container.name}', '/bin/bash')"
+          ${!isRunning ? "disabled" : ""} title="Restart Shell session">&#x21BB;</button>
+      </div>
       <button class="btn btn-secondary" id="code-btn-${container.name}"
         onclick="openCode('${container.name}')"
         ${!isRunning ? "disabled" : ""}>Code</button>
@@ -298,7 +308,8 @@ function updateCardStatus(name, status) {
   const startStop = document.getElementById(`startstop-${name}`);
   if (startStop) startStop.textContent = isRunning ? "Stop" : "Start";
 
-  for (const id of [`claude-btn-${name}`, `shell-btn-${name}`, `code-btn-${name}`]) {
+  for (const id of [`claude-btn-${name}`, `shell-btn-${name}`, `code-btn-${name}`,
+                     `claude-reload-${name}`, `shell-reload-${name}`]) {
     const btn = document.getElementById(id);
     if (btn) btn.disabled = !isRunning;
   }
@@ -408,6 +419,21 @@ function switchSession(name, cmd) {
   resizeObserver.observe(wrap);
 
   updateCardStatus(name, state.container.status);
+}
+
+function reloadSession(name, cmd) {
+  const state = cards.get(name);
+  if (!state) return;
+
+  const existing = state.sessions[cmd];
+  if (existing) {
+    if (existing.ws) existing.ws.close();
+    if (existing.terminal) existing.terminal.dispose();
+    if (existing.el) existing.el.remove();
+    delete state.sessions[cmd];
+  }
+
+  switchSession(name, cmd);
 }
 
 function updateTabButtons(name, activeCmd) {
@@ -630,27 +656,43 @@ function closeMenu() {
 
 async function removeContainerAction(name) {
   if (!confirm(`Remove container "${name}"? This cannot be undone.`)) return;
-  await api("DELETE", `/containers/${encodeURIComponent(name)}`);
   removeCard(name);
+  api("DELETE", `/containers/${encodeURIComponent(name)}`);
 }
 
-// ─── Host terminal (bottom panel) ───
+// ─── Host terminal (multi-tab bottom panel) ───
 
-let hostTermState = { terminal: null, fitAddon: null, ws: null };
+let htTabs = [];
+let htActiveId = null;
+let htCounter = 0;
 
 function initHostTerminal() {
-  const wrap = document.getElementById("host-terminal-wrap");
-  if (!wrap) return;
+  addHostTab();
+  initHostTerminalDrag();
+}
 
-  const term = createTerminal(wrap);
+function addHostTab() {
+  const panel = document.getElementById("host-terminal");
+  if (panel.classList.contains("collapsed")) {
+    panel.classList.remove("collapsed");
+  }
+
+  htCounter++;
+  const id = `ht-${htCounter}`;
+  const label = htTabs.length === 0 ? "bash" : `bash (${htCounter})`;
+
+  const wrap = document.getElementById("host-terminal-wrap");
+  const pane = document.createElement("div");
+  pane.className = "ht-pane";
+  pane.id = `pane-${id}`;
+  wrap.appendChild(pane);
+
+  const term = createTerminal(pane);
   const fitAddon = term._fitAddon;
-  hostTermState.terminal = term;
-  hostTermState.fitAddon = fitAddon;
 
   const wsUrl = `${WS_BASE}/ws/host-terminal`;
   const ws = new WebSocket(wsUrl);
   ws.binaryType = "arraybuffer";
-  hostTermState.ws = ws;
 
   ws.onopen = () => {
     ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
@@ -665,8 +707,9 @@ function initHostTerminal() {
   };
 
   ws.onclose = () => {
-    term.write("\r\n\x1b[90m[host session ended]\x1b[0m\r\n");
-    hostTermState.ws = null;
+    term.write("\r\n\x1b[90m[session ended]\x1b[0m\r\n");
+    const tab = htTabs.find(t => t.id === id);
+    if (tab) tab.ws = null;
   };
 
   term.onData((data) => {
@@ -676,7 +719,7 @@ function initHostTerminal() {
   });
 
   attachClipboardHandlers(term, ws);
-  attachTermContextMenu(wrap, term, ws);
+  attachTermContextMenu(pane, term, ws);
 
   const resizeObserver = new ResizeObserver(() => {
     requestAnimationFrame(() => {
@@ -687,17 +730,80 @@ function initHostTerminal() {
     });
   });
   resizeObserver.observe(wrap);
+
+  htTabs.push({ id, label, terminal: term, fitAddon, ws, pane, resizeObserver });
+  switchHostTab(id);
+  renderHostTabs();
+}
+
+function switchHostTab(id) {
+  htActiveId = id;
+
+  for (const tab of htTabs) {
+    tab.pane.classList.toggle("active", tab.id === id);
+  }
+
+  const active = htTabs.find(t => t.id === id);
+  if (active) {
+    requestAnimationFrame(() => active.fitAddon.fit());
+  }
+
+  renderHostTabs();
+}
+
+function closeHostTab(id, event) {
+  if (event) event.stopPropagation();
+
+  const idx = htTabs.findIndex(t => t.id === id);
+  if (idx === -1) return;
+
+  const tab = htTabs[idx];
+  if (tab.ws) tab.ws.close();
+  if (tab.terminal) tab.terminal.dispose();
+  if (tab.pane) tab.pane.remove();
+  htTabs.splice(idx, 1);
+
+  if (htTabs.length === 0) {
+    htActiveId = null;
+    document.getElementById("host-terminal").classList.add("collapsed");
+  } else if (htActiveId === id) {
+    const newIdx = Math.min(idx, htTabs.length - 1);
+    switchHostTab(htTabs[newIdx].id);
+  }
+
+  renderHostTabs();
+}
+
+function killActiveHostTab() {
+  if (htActiveId) closeHostTab(htActiveId);
+}
+
+function renderHostTabs() {
+  const container = document.getElementById("ht-tabs");
+  container.innerHTML = "";
+
+  for (const tab of htTabs) {
+    const el = document.createElement("button");
+    el.className = `ht-tab${tab.id === htActiveId ? " active" : ""}`;
+    el.onclick = () => switchHostTab(tab.id);
+    el.innerHTML = `<span>${escapeHtml(tab.label)}</span><span class="ht-tab-close" onclick="closeHostTab('${tab.id}', event)">&#x2715;</span>`;
+    container.appendChild(el);
+  }
 }
 
 function toggleHostTerminal() {
   const panel = document.getElementById("host-terminal");
   panel.classList.toggle("collapsed");
-  if (hostTermState.fitAddon) {
-    requestAnimationFrame(() => hostTermState.fitAddon.fit());
+
+  if (!panel.classList.contains("collapsed") && htActiveId) {
+    const active = htTabs.find(t => t.id === htActiveId);
+    if (active) {
+      requestAnimationFrame(() => active.fitAddon.fit());
+    }
   }
 }
 
-(function initHostTerminalDrag() {
+function initHostTerminalDrag() {
   const handle = document.getElementById("host-terminal-drag");
   const panel = document.getElementById("host-terminal");
   if (!handle || !panel) return;
@@ -725,15 +831,16 @@ function toggleHostTerminal() {
       document.body.style.userSelect = "";
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
-      if (hostTermState.fitAddon) {
-        requestAnimationFrame(() => hostTermState.fitAddon.fit());
+      const active = htTabs.find(t => t.id === htActiveId);
+      if (active) {
+        requestAnimationFrame(() => active.fitAddon.fit());
       }
     }
 
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
   });
-})();
+}
 
 // ─── Page navigation ───
 
@@ -846,22 +953,184 @@ async function submitCreate() {
 
   hideDialog("create-dialog");
 
-  try {
-    const result = await api("POST", "/containers", {
-      name, rocm_version, distro, workspace,
-    });
+  const wsUrl = `${WS_BASE}/ws/create`;
+  const ws = new WebSocket(wsUrl);
 
-    if (result.error) {
-      alert(`Error: ${result.error}`);
-      return;
-    }
+  let buildCardName = null;
 
-    if (!cards.has(result.name)) {
-      addCard(result);
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ name, rocm_version, distro, workspace }));
+  };
+
+  ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+
+    if (msg.type === "init") {
+      buildCardName = msg.name;
+      addBuildQueueItem(msg.name, msg.display_name, msg.rocm_version);
+    } else if (msg.type === "log") {
+      appendBuildLog(buildCardName, msg.text);
+    } else if (msg.type === "phase") {
+      updateBuildPhase(buildCardName, msg.phase);
+    } else if (msg.type === "done") {
+      completeBuildItem(buildCardName, msg.container);
+    } else if (msg.type === "error") {
+      markBuildError(buildCardName, msg.message);
     }
-  } catch (e) {
-    alert(`Error creating container: ${e.message}`);
-  }
+  };
+
+  ws.onerror = () => {
+    if (buildCardName) markBuildError(buildCardName, "Connection lost");
+  };
+}
+
+// ─── Build queue ───
+
+const buildQueue = new Map();
+
+function showBuildQueue() {
+  document.getElementById("build-queue").classList.remove("hidden");
+}
+
+function hideBuildQueue() {
+  document.getElementById("build-queue").classList.add("hidden");
+}
+
+function updateBuildQueueCount() {
+  const count = buildQueue.size;
+  document.getElementById("build-queue-count").textContent = count;
+  if (count === 0) hideBuildQueue();
+  else showBuildQueue();
+}
+
+function addBuildQueueItem(name, displayName, rocmVersion) {
+  showBuildQueue();
+  const list = document.getElementById("build-queue-list");
+
+  const item = document.createElement("div");
+  item.className = "bq-item expanded";
+  item.id = `bq-${name}`;
+  item.innerHTML = `
+    <div class="bq-item-header">
+      <div class="bq-spinner" id="bq-spinner-${name}"></div>
+      <div class="bq-info">
+        <div class="bq-name">${escapeHtml(displayName)}</div>
+        <div class="bq-phase" id="bq-phase-${name}">Queued...</div>
+      </div>
+      <button class="bq-toggle" onclick="toggleBqItem('${name}')">&#9662;</button>
+    </div>
+    <div class="bq-progress"><div class="bq-progress-fill" id="bq-progress-${name}"></div></div>
+    <div class="bq-log"><div class="bq-log-inner" id="bq-log-${name}"></div></div>
+  `;
+
+  list.prepend(item);
+  buildQueue.set(name, true);
+  updateBuildQueueCount();
+
+  // also add a placeholder card in the grid
+  const grid = document.getElementById("container-grid");
+  const card = document.createElement("div");
+  card.className = "container-card building-card";
+  card.id = `card-${name}`;
+  card.innerHTML = `
+    <div class="card-header">
+      <div class="status-dot building" id="dot-${name}"></div>
+      <div class="card-info">
+        <div class="card-title">${escapeHtml(displayName)}</div>
+        <div class="card-subtitle">ROCm ${escapeHtml(rocmVersion)}</div>
+      </div>
+      <span class="card-status build-phase" id="status-${name}">building</span>
+    </div>
+    <div class="card-terminal">
+      <div class="terminal-placeholder">Building image... see Build Queue &rarr;</div>
+    </div>
+    <div class="card-footer">
+      <span class="build-progress-label" style="font-size:11px;color:var(--text-dim)">Image build in progress</span>
+    </div>
+  `;
+  grid.prepend(card);
+
+  const emptyState = document.getElementById("empty-state");
+  if (emptyState) emptyState.classList.add("hidden");
+}
+
+function toggleBqItem(name) {
+  const el = document.getElementById(`bq-${name}`);
+  if (el) el.classList.toggle("expanded");
+}
+
+function appendBuildLog(name, text) {
+  const log = document.getElementById(`bq-log-${name}`);
+  if (!log) return;
+  log.textContent += text;
+  log.scrollTop = log.scrollHeight;
+}
+
+function updateBuildPhase(name, phase) {
+  const phaseEl = document.getElementById(`bq-phase-${name}`);
+  const progressEl = document.getElementById(`bq-progress-${name}`);
+  const statusEl = document.getElementById(`status-${name}`);
+
+  const phases = {
+    building_image: { label: "Building image...", progress: 40 },
+    creating_container: { label: "Creating container...", progress: 85 },
+  };
+
+  const info = phases[phase] || { label: phase, progress: 50 };
+  if (phaseEl) phaseEl.textContent = info.label;
+  if (progressEl) progressEl.style.width = `${info.progress}%`;
+  if (statusEl) statusEl.textContent = info.label.replace("...", "");
+}
+
+function completeBuildItem(name, container) {
+  const spinner = document.getElementById(`bq-spinner-${name}`);
+  if (spinner) spinner.className = "bq-spinner done";
+
+  const phaseEl = document.getElementById(`bq-phase-${name}`);
+  if (phaseEl) { phaseEl.textContent = "Done"; phaseEl.style.color = "var(--green)"; }
+
+  const progressEl = document.getElementById(`bq-progress-${name}`);
+  if (progressEl) { progressEl.style.width = "100%"; progressEl.style.background = "var(--green)"; }
+
+  // replace placeholder card with real card
+  const placeholder = document.getElementById(`card-${name}`);
+  if (placeholder) placeholder.remove();
+  addCard(container);
+
+  // remove from queue after a delay
+  setTimeout(() => {
+    const bqEl = document.getElementById(`bq-${name}`);
+    if (bqEl) bqEl.remove();
+    buildQueue.delete(name);
+    updateBuildQueueCount();
+  }, 3000);
+}
+
+function markBuildError(name, message) {
+  const spinner = document.getElementById(`bq-spinner-${name}`);
+  if (spinner) spinner.className = "bq-spinner error";
+
+  const phaseEl = document.getElementById(`bq-phase-${name}`);
+  if (phaseEl) { phaseEl.textContent = `Failed: ${message}`; phaseEl.style.color = "var(--red)"; }
+
+  const progressEl = document.getElementById(`bq-progress-${name}`);
+  if (progressEl) { progressEl.style.width = "100%"; progressEl.style.background = "var(--red)"; }
+
+  const dot = document.getElementById(`dot-${name}`);
+  if (dot) dot.className = "status-dot stopped";
+
+  const statusEl = document.getElementById(`status-${name}`);
+  if (statusEl) { statusEl.textContent = "failed"; statusEl.style.color = "var(--red)"; }
+
+  // remove from queue after longer delay
+  setTimeout(() => {
+    const bqEl = document.getElementById(`bq-${name}`);
+    if (bqEl) bqEl.remove();
+    const cardEl = document.getElementById(`card-${name}`);
+    if (cardEl) cardEl.remove();
+    buildQueue.delete(name);
+    updateBuildQueueCount();
+  }, 10000);
 }
 
 // ─── Add existing dialog ───

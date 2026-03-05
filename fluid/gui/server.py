@@ -109,6 +109,224 @@ def create_container(req: CreateContainerRequest) -> ContainerInfo:
     )
 
 
+@app.websocket("/ws/create")
+async def create_container_ws(websocket: WebSocket):
+    """WebSocket endpoint that streams container build/create progress.
+
+    All blocking Docker calls run in a thread pool so the event loop
+    stays responsive for other connections.
+    """
+    await websocket.accept()
+
+    try:
+        msg = await websocket.receive_json()
+    except Exception:
+        await websocket.close()
+        return
+
+    req_name = msg.get("name")
+    rocm_version = msg.get("rocm_version", "latest")
+    distro = msg.get("distro", "ubuntu-22.04")
+    workspace = msg.get("workspace")
+
+    from fluid.config import make_container_name
+    container_name = make_container_name(req_name, rocm_version)
+    display_name = container_name.removeprefix("fluid-")
+
+    await websocket.send_json({
+        "type": "init",
+        "name": container_name,
+        "display_name": display_name,
+        "rocm_version": rocm_version,
+    })
+
+    import io
+    import queue
+    import threading
+    from datetime import datetime, timezone
+
+    import docker
+    from docker.errors import ImageNotFound
+    from fluid.config import (
+        IMAGE_PREFIX,
+        LABEL_MANAGED,
+        LABEL_ROCM_VERSION,
+        ContainerRecord,
+        load_config,
+        load_state,
+        save_state,
+    )
+    from fluid.docker_manager import _resolve_device_gids
+    from fluid.dockerfile import generate_dockerfile
+
+    msg_queue: queue.Queue = queue.Queue()
+
+    def _build_thread():
+        """Run all blocking Docker operations in a background thread."""
+        def emit(msg_dict):
+            msg_queue.put(msg_dict)
+
+        def log(text):
+            emit({"type": "log", "text": text})
+
+        try:
+            client = docker.from_env()
+
+            image_tag = f"{IMAGE_PREFIX}:{distro}-{rocm_version}"
+            try:
+                client.images.get(image_tag)
+                log(f"Using existing image {image_tag}\n")
+            except ImageNotFound:
+                log(f"Building image {image_tag}...\n")
+                emit({"type": "phase", "phase": "building_image"})
+
+                dockerfile_content = generate_dockerfile(
+                    rocm_version, distro=distro)
+                try:
+                    stream = client.api.build(
+                        fileobj=io.BytesIO(dockerfile_content.encode()),
+                        tag=image_tag,
+                        rm=True,
+                        forcerm=True,
+                        decode=True,
+                    )
+                    build_error = None
+                    for chunk in stream:
+                        if "stream" in chunk:
+                            line = chunk["stream"].rstrip()
+                            if line:
+                                log(line + "\n")
+                        elif "error" in chunk:
+                            build_error = chunk["error"]
+                            log(f"\n{build_error}\n")
+
+                    if build_error:
+                        emit({"type": "error",
+                              "message": f"Image build failed: {build_error}"})
+                        emit({"type": "_done"})
+                        return
+
+                except Exception as e:
+                    log(f"\nBuild failed: {e}\n")
+                    emit({"type": "error",
+                          "message": f"Image build failed: {e}"})
+                    emit({"type": "_done"})
+                    return
+
+                log(f"Image built: {image_tag}\n\n")
+
+            emit({"type": "phase", "phase": "creating_container"})
+            log(f"Creating container {container_name}...\n")
+
+            try:
+                client.containers.get(container_name)
+                emit({"type": "error",
+                      "message": f"Container {container_name} already exists"})
+                emit({"type": "_done"})
+                return
+            except docker.errors.NotFound:
+                pass
+
+            config = load_config()
+            volumes = {}
+            if workspace:
+                volumes[workspace] = {"bind": "/workspace", "mode": "rw"}
+
+            home = Path.home()
+            for src, dst, mode in [
+                (home / ".ssh", "/home/developer/.ssh", "ro"),
+                (home / ".gitconfig", "/home/developer/.gitconfig", "ro"),
+                (home / ".claude", "/home/developer/.claude", "rw"),
+                (home / ".config" / "gh",
+                 "/home/developer/.config/gh", "ro"),
+            ]:
+                if src.exists():
+                    volumes[str(src)] = {"bind": dst, "mode": mode}
+
+            host_gids = _resolve_device_gids()
+            env = {"ROCM_VERSION": rocm_version}
+            env.update(config.env_vars())
+
+            container = client.containers.create(
+                image_tag,
+                name=container_name,
+                hostname=container_name,
+                stdin_open=True,
+                tty=True,
+                detach=True,
+                volumes=volumes,
+                devices=["/dev/kfd", "/dev/dri"],
+                group_add=host_gids,
+                security_opt=["seccomp=unconfined"],
+                labels={
+                    LABEL_MANAGED: "true",
+                    LABEL_ROCM_VERSION: rocm_version,
+                },
+                environment=env,
+            )
+
+            container.start()
+            log(f"Container {container_name} started.\n")
+
+            record = ContainerRecord(
+                name=container_name,
+                rocm_version=rocm_version,
+                created_at=datetime.now(timezone.utc).isoformat(),
+                container_id=container.id,
+                image_id=image_tag,
+                workspace_mount=workspace or "",
+            )
+            state = load_state()
+            state.add(record)
+            state.current = container_name
+            save_state(state)
+
+            emit({
+                "type": "done",
+                "container": {
+                    "name": container_name,
+                    "display_name": display_name,
+                    "status": "running",
+                    "rocm_version": rocm_version,
+                    "workspace": workspace or "",
+                },
+            })
+
+        except Exception as e:
+            log(f"\nError: {e}\n")
+            emit({"type": "error", "message": str(e)})
+
+        emit({"type": "_done"})
+
+    thread = threading.Thread(target=_build_thread, daemon=True)
+    thread.start()
+
+    try:
+        while True:
+            try:
+                item = msg_queue.get(block=False)
+            except queue.Empty:
+                await asyncio.sleep(0.1)
+                if not thread.is_alive() and msg_queue.empty():
+                    break
+                continue
+
+            if item.get("type") == "_done":
+                break
+
+            try:
+                await websocket.send_json(item)
+            except Exception:
+                break
+    except Exception:
+        pass
+
+    try:
+        await websocket.close()
+    except Exception:
+        pass
+
+
 @app.post("/api/containers/{name}/start")
 def start_container(name: str) -> dict:
     import docker
@@ -128,7 +346,7 @@ def start_container(name: str) -> dict:
 
 
 @app.post("/api/containers/{name}/stop")
-def stop_container(name: str) -> dict:
+async def stop_container(name: str) -> dict:
     import docker
     from fluid.config import CONTAINER_PREFIX
 
@@ -141,17 +359,18 @@ def stop_container(name: str) -> dict:
         except docker.errors.NotFound:
             return {"error": f"Container {name} not found"}
 
-    session_key = container.name
-    if session_key in _active_sessions:
-        _active_sessions[session_key].close()
-        del _active_sessions[session_key]
+    real_name = container.name
+    for key in [k for k in _active_sessions if k.startswith(real_name)]:
+        _active_sessions[key].close()
+        del _active_sessions[key]
 
-    container.stop(timeout=5)
-    return {"status": "stopped", "name": container.name}
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, lambda: container.stop(timeout=5))
+    return {"status": "stopped", "name": real_name}
 
 
 @app.delete("/api/containers/{name}")
-def remove_container(name: str) -> dict:
+async def remove_container(name: str) -> dict:
     import docker
     from fluid.config import CONTAINER_PREFIX, load_state, save_state
 
@@ -166,18 +385,21 @@ def remove_container(name: str) -> dict:
 
     real_name = container.name
 
-    session_key = real_name
-    if session_key in _active_sessions:
-        _active_sessions[session_key].close()
-        del _active_sessions[session_key]
-
-    if container.status == "running":
-        container.stop(timeout=5)
-    container.remove(force=True)
+    for key in [k for k in _active_sessions if k.startswith(real_name)]:
+        _active_sessions[key].close()
+        del _active_sessions[key]
 
     state = load_state()
     state.remove(real_name)
     save_state(state)
+
+    def _do_remove():
+        if container.status == "running":
+            container.stop(timeout=5)
+        container.remove(force=True)
+
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, _do_remove)
 
     return {"status": "removed", "name": real_name}
 
