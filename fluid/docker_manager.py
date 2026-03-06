@@ -170,6 +170,8 @@ def build_image_headless(
     distro: str = "ubuntu-22.04",
     tag: Optional[str] = None,
     on_log: Optional[callable] = None,
+    gpu_family: Optional[str] = None,
+    release_type: str = "nightlies",
 ) -> str:
     """Build an image without rich output or SystemExit.
 
@@ -177,7 +179,11 @@ def build_image_headless(
     ``on_log`` receives individual log lines if provided.
     """
     tag = tag or f"{IMAGE_PREFIX}:{rocm_version}"
-    dockerfile_content = generate_dockerfile(rocm_version, distro=distro)
+    dockerfile_content = generate_dockerfile(
+        rocm_version, distro=distro,
+        gpu_family=gpu_family or "",
+        release_type=release_type,
+    )
 
     image, build_logs = client.images.build(
         fileobj=io.BytesIO(dockerfile_content.encode()),
@@ -201,6 +207,8 @@ def create_container_headless(
     workspace: Optional[str] = None,
     distro: str = "ubuntu-22.04",
     on_log: Optional[callable] = None,
+    gpu_family: Optional[str] = None,
+    release_type: str = "nightlies",
 ) -> ContainerRecord:
     """Create a container without rich output or SystemExit.
 
@@ -218,7 +226,10 @@ def create_container_headless(
     if existing:
         raise ValueError(f"Container {container_name} already exists.")
 
-    image_tag = f"{IMAGE_PREFIX}:{distro}-{rocm_version}"
+    tag_suffix = f"{distro}-{rocm_version}"
+    if gpu_family:
+        tag_suffix += f"-{gpu_family}"
+    image_tag = f"{IMAGE_PREFIX}:{tag_suffix}"
     try:
         client.images.get(image_tag)
         if on_log:
@@ -227,7 +238,9 @@ def create_container_headless(
         if on_log:
             on_log(f"Building image {image_tag}...")
         build_image_headless(client, rocm_version, distro=distro,
-                             tag=image_tag, on_log=on_log)
+                             tag=image_tag, on_log=on_log,
+                             gpu_family=gpu_family,
+                             release_type=release_type)
 
     config = load_config()
 

@@ -34,6 +34,35 @@ async function loadConfig() {
     appConfig.rocm_versions, appConfig.default_rocm_version);
   initComboBox("combo-distro", "create-distro", "combo-distro-list",
     appConfig.distros, appConfig.default_distro);
+  initComboBox("combo-gpu-family", "create-gpu-family", "combo-gpu-family-list",
+    appConfig.therock_gpu_families || [], (appConfig.therock_gpu_families || [])[0] || "");
+  initComboBox("combo-release-type", "create-release-type", "combo-release-type-list",
+    appConfig.therock_release_types || [], "nightlies");
+
+  const distroInput = document.getElementById("create-distro");
+  distroInput.addEventListener("input", () => updateTheRockFields());
+  distroInput.addEventListener("change", () => updateTheRockFields());
+}
+
+function updateTheRockFields() {
+  const distro = document.getElementById("create-distro").value;
+  const isTheRock = distro.startsWith("therock-");
+  document.getElementById("therock-fields").style.display = isTheRock ? "block" : "none";
+
+  const versionInput = document.getElementById("create-version");
+  const versionList = document.getElementById("combo-version-list");
+  if (isTheRock && appConfig) {
+    versionInput.placeholder = "e.g. 7.12.0a20260304 or 7.11.0rc2";
+    if (!versionInput.value || appConfig.rocm_versions.includes(versionInput.value)) {
+      versionInput.value = (appConfig.therock_versions || [])[0] || "";
+    }
+  } else {
+    versionInput.placeholder = "e.g. 6.3 or type a custom version";
+    if (appConfig && appConfig.therock_versions &&
+        appConfig.therock_versions.includes(versionInput.value)) {
+      versionInput.value = appConfig.default_rocm_version;
+    }
+  }
 }
 
 // ─── Combo box (editable dropdown) ───
@@ -72,6 +101,7 @@ function initComboBox(wrapperId, inputId, listId, options, defaultValue) {
         e.preventDefault();
         input.value = opt;
         closeCombo();
+        input.dispatchEvent(new Event("input", { bubbles: true }));
       });
       list.appendChild(div);
     }
@@ -853,17 +883,18 @@ function switchPage(page) {
     btn.classList.toggle("active", btn.dataset.page === page);
   });
 
-  const mainEl = document.getElementById("main");
-  const settingsEl = document.getElementById("page-settings");
+  const pages = {
+    home: document.getElementById("main"),
+    settings: document.getElementById("page-settings"),
+    images: document.getElementById("page-images"),
+  };
 
-  if (page === "home") {
-    mainEl.style.display = "flex";
-    settingsEl.style.display = "none";
-  } else if (page === "settings") {
-    mainEl.style.display = "none";
-    settingsEl.style.display = "flex";
-    loadSettings();
+  for (const [key, el] of Object.entries(pages)) {
+    if (el) el.style.display = key === page ? "flex" : "none";
   }
+
+  if (page === "settings") loadSettings();
+  if (page === "images") loadImages();
 }
 
 // ─── Settings ───
@@ -935,6 +966,66 @@ function toggleKeyVisibility(inputId, btn) {
   }
 }
 
+// ─── Images page ───
+
+async function loadImages() {
+  const images = await api("GET", "/images");
+  const tbody = document.getElementById("images-tbody");
+  const empty = document.getElementById("images-empty");
+  const count = document.getElementById("images-count");
+
+  tbody.innerHTML = "";
+
+  if (images.length === 0) {
+    empty.classList.remove("hidden");
+    count.textContent = "0 images";
+    return;
+  }
+
+  empty.classList.add("hidden");
+  count.textContent = `${images.length} image${images.length !== 1 ? "s" : ""}`;
+
+  for (const img of images) {
+    const tr = document.createElement("tr");
+    const statusClass = img.in_use ? "in-use" : "unused";
+    const statusLabel = img.in_use ? "In use" : "Unused";
+
+    tr.innerHTML = `
+      <td><span class="img-tag">${escapeHtml(img.tag)}</span></td>
+      <td>${escapeHtml(img.rocm_version)}</td>
+      <td><span class="img-size">${img.size_mb} MB</span></td>
+      <td><span class="img-status ${statusClass}"><span class="img-status-dot"></span>${statusLabel}</span></td>
+      <td><button class="img-remove-btn" onclick="removeImage('${escapeHtml(img.id)}', ${img.in_use})"
+        ${img.in_use ? "title=\"In use by a container\"" : ""}>Remove</button></td>
+    `;
+
+    tbody.appendChild(tr);
+  }
+}
+
+async function removeImage(imageId, inUse) {
+  if (inUse) {
+    if (!confirm("This image is in use by a container. Force remove?")) return;
+    api("DELETE", `/images/${encodeURIComponent(imageId)}?force=true`);
+  } else {
+    api("DELETE", `/images/${encodeURIComponent(imageId)}`);
+  }
+  setTimeout(loadImages, 500);
+}
+
+async function cleanImages(force) {
+  const msg = force
+    ? "Remove ALL Fluid images, including those in use by containers?"
+    : "Remove unused Fluid images?";
+  if (!confirm(msg)) return;
+
+  const result = await api("POST", `/images/clean?force=${force}`);
+  if (result.error) {
+    alert(result.error);
+  }
+  loadImages();
+}
+
 // ─── Create dialog ───
 
 function showCreateDialog() {
@@ -943,6 +1034,9 @@ function showCreateDialog() {
   document.getElementById("create-version").value = appConfig ? appConfig.default_rocm_version : "latest";
   document.getElementById("create-distro").value = appConfig ? appConfig.default_distro : "ubuntu-22.04";
   document.getElementById("create-workspace").value = "";
+  document.getElementById("create-gpu-family").value = appConfig ? (appConfig.therock_gpu_families || [])[0] || "" : "";
+  document.getElementById("create-release-type").value = "nightlies";
+  updateTheRockFields();
 }
 
 async function submitCreate() {
@@ -950,6 +1044,9 @@ async function submitCreate() {
   const rocm_version = document.getElementById("create-version").value;
   const distro = document.getElementById("create-distro").value;
   const workspace = document.getElementById("create-workspace").value.trim() || null;
+  const isTheRock = distro.startsWith("therock-");
+  const gpu_family = isTheRock ? document.getElementById("create-gpu-family").value.trim() : "";
+  const release_type = isTheRock ? document.getElementById("create-release-type").value.trim() : "nightlies";
 
   hideDialog("create-dialog");
 
@@ -959,7 +1056,7 @@ async function submitCreate() {
   let buildCardName = null;
 
   ws.onopen = () => {
-    ws.send(JSON.stringify({ name, rocm_version, distro, workspace }));
+    ws.send(JSON.stringify({ name, rocm_version, distro, workspace, gpu_family, release_type }));
   };
 
   ws.onmessage = (event) => {

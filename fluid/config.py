@@ -18,7 +18,13 @@ LABEL_MANAGED = "fluid.managed"
 LABEL_ROCM_VERSION = "fluid.rocm_version"
 DEFAULT_ROCM_VERSION = "latest"
 DEFAULT_DISTRO = "ubuntu-22.04"
-SUPPORTED_DISTROS = ("ubuntu-22.04", "ubuntu-24.04", "almalinux-8")
+SUPPORTED_DISTROS = (
+    "ubuntu-22.04",
+    "ubuntu-24.04",
+    "almalinux-8",
+    "therock-ubuntu-24.04",
+    "therock-ubuntu-22.04",
+)
 
 
 @dataclass

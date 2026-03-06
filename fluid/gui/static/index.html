@@ -16,6 +16,7 @@
       </div>
       <nav class="sidebar-nav">
         <button class="nav-item active" data-page="home" onclick="switchPage('home')">Home</button>
+        <button class="nav-item" data-page="images" onclick="switchPage('images')">Images</button>
         <button class="nav-item" data-page="settings" onclick="switchPage('settings')">Settings</button>
       </nav>
       <div class="sidebar-footer">v0.1.0</div>
@@ -111,6 +112,36 @@
         </div>
       </div>
     </div>
+
+    <!-- Images page -->
+    <div id="page-images" class="page" style="display:none">
+      <header class="page-header">
+        <div class="header-info">
+          <h1 class="header-title">Images</h1>
+          <span class="header-subtitle" id="images-count">0 images</span>
+        </div>
+        <div class="header-actions">
+          <button class="btn btn-secondary" onclick="loadImages()">Refresh</button>
+          <button class="btn btn-secondary" onclick="cleanImages(false)">Clean Unused</button>
+          <button class="btn btn-danger" onclick="cleanImages(true)">Force Clean All</button>
+        </div>
+      </header>
+      <div class="images-content">
+        <table class="images-table" id="images-table">
+          <thead>
+            <tr>
+              <th>Image</th>
+              <th>ROCm</th>
+              <th>Size</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="images-tbody"></tbody>
+        </table>
+        <div id="images-empty" class="images-empty">No Fluid images found.</div>
+      </div>
+    </div>
   </div>
 
   <!-- Create Container Dialog -->
@@ -133,6 +164,22 @@
                placeholder="e.g. ubuntu-22.04" autocomplete="off">
         <button class="combo-toggle" type="button">&#9662;</button>
         <div class="combo-dropdown" id="combo-distro-list"></div>
+      </div>
+      <div id="therock-fields" style="display:none">
+        <label class="field-label">GPU Family</label>
+        <div class="combo-box" id="combo-gpu-family">
+          <input type="text" class="field-input combo-input" id="create-gpu-family"
+                 placeholder="e.g. gfx110X-all" autocomplete="off">
+          <button class="combo-toggle" type="button">&#9662;</button>
+          <div class="combo-dropdown" id="combo-gpu-family-list"></div>
+        </div>
+        <label class="field-label">Release Type</label>
+        <div class="combo-box" id="combo-release-type">
+          <input type="text" class="field-input combo-input" id="create-release-type"
+                 placeholder="nightlies" autocomplete="off">
+          <button class="combo-toggle" type="button">&#9662;</button>
+          <div class="combo-dropdown" id="combo-release-type-list"></div>
+        </div>
       </div>
       <label class="field-label">Workspace Directory</label>
       <input type="text" id="create-workspace" class="field-input" placeholder="Leave empty for no mount (container-only workspace)">

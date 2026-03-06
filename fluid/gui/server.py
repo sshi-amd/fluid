@@ -42,6 +42,8 @@ class CreateContainerRequest(BaseModel):
     rocm_version: str = "latest"
     distro: str = "ubuntu-22.04"
     workspace: Optional[str] = None
+    gpu_family: Optional[str] = None
+    release_type: str = "nightlies"
 
 
 class ContainerInfo(BaseModel):
@@ -128,6 +130,8 @@ async def create_container_ws(websocket: WebSocket):
     rocm_version = msg.get("rocm_version", "latest")
     distro = msg.get("distro", "ubuntu-22.04")
     workspace = msg.get("workspace")
+    gpu_family = msg.get("gpu_family", "")
+    release_type = msg.get("release_type", "nightlies")
 
     from fluid.config import make_container_name
     container_name = make_container_name(req_name, rocm_version)
@@ -172,7 +176,10 @@ async def create_container_ws(websocket: WebSocket):
         try:
             client = docker.from_env()
 
-            image_tag = f"{IMAGE_PREFIX}:{distro}-{rocm_version}"
+            tag_suffix = f"{distro}-{rocm_version}"
+            if gpu_family:
+                tag_suffix += f"-{gpu_family}"
+            image_tag = f"{IMAGE_PREFIX}:{tag_suffix}"
             try:
                 client.images.get(image_tag)
                 log(f"Using existing image {image_tag}\n")
@@ -181,7 +188,9 @@ async def create_container_ws(websocket: WebSocket):
                 emit({"type": "phase", "phase": "building_image"})
 
                 dockerfile_content = generate_dockerfile(
-                    rocm_version, distro=distro)
+                    rocm_version, distro=distro,
+                    gpu_family=gpu_family,
+                    release_type=release_type)
                 try:
                     stream = client.api.build(
                         fileobj=io.BytesIO(dockerfile_content.encode()),
@@ -407,6 +416,7 @@ async def remove_container(name: str) -> dict:
 @app.get("/api/config")
 def get_config() -> dict:
     from fluid.config import DEFAULT_DISTRO, DEFAULT_ROCM_VERSION, SUPPORTED_DISTROS
+    from fluid.dockerfile import THEROCK_GPU_FAMILIES, THEROCK_RELEASE_TYPES
 
     return {
         "default_rocm_version": DEFAULT_ROCM_VERSION,
@@ -416,7 +426,103 @@ def get_config() -> dict:
             "6.4", "6.3.3", "6.3.2", "6.3.1", "6.3",
             "6.2.4", "6.2", "6.1.3", "6.1", "latest",
         ],
+        "therock_versions": [
+            "7.12.0a20260304",
+            "7.11.0rc2",
+            "7.11.0rc1",
+            "7.10.0rc2",
+        ],
+        "therock_gpu_families": THEROCK_GPU_FAMILIES,
+        "therock_release_types": THEROCK_RELEASE_TYPES,
     }
+
+
+@app.get("/api/images")
+def list_images() -> list[dict]:
+    import docker
+    from fluid.config import LABEL_MANAGED, LABEL_ROCM_VERSION
+
+    try:
+        client = docker.from_env()
+    except Exception:
+        return []
+
+    images = client.images.list(filters={"label": f"{LABEL_MANAGED}=true"})
+    containers = client.containers.list(
+        all=True, filters={"label": f"{LABEL_MANAGED}=true"})
+    in_use_ids = {c.image.id for c in containers}
+
+    results = []
+    for img in images:
+        tag = img.tags[0] if img.tags else img.short_id
+        size_mb = round((img.attrs.get("Size", 0) or 0) / 1_000_000)
+        created = img.attrs.get("Created", "")
+
+        results.append({
+            "id": img.id,
+            "short_id": img.short_id.removeprefix("sha256:"),
+            "tag": tag,
+            "rocm_version": img.labels.get(LABEL_ROCM_VERSION, "?"),
+            "size_mb": size_mb,
+            "created": created,
+            "in_use": img.id in in_use_ids,
+        })
+
+    return results
+
+
+@app.delete("/api/images/{image_id:path}")
+async def remove_image(image_id: str, force: bool = False) -> dict:
+    import docker
+
+    try:
+        client = docker.from_env()
+    except Exception:
+        return {"error": "Cannot connect to Docker"}
+
+    loop = asyncio.get_event_loop()
+    try:
+        await loop.run_in_executor(
+            None, lambda: client.images.remove(image_id, force=force))
+    except Exception as e:
+        return {"error": str(e)}
+
+    return {"status": "removed", "id": image_id}
+
+
+@app.post("/api/images/clean")
+async def clean_images(force: bool = False) -> dict:
+    import docker
+    from fluid.config import LABEL_MANAGED
+
+    try:
+        client = docker.from_env()
+    except Exception:
+        return {"error": "Cannot connect to Docker"}
+
+    images = client.images.list(filters={"label": f"{LABEL_MANAGED}=true"})
+    if not images:
+        return {"removed": 0}
+
+    in_use_ids = set()
+    if not force:
+        containers = client.containers.list(
+            all=True, filters={"label": f"{LABEL_MANAGED}=true"})
+        in_use_ids = {c.image.id for c in containers}
+
+    removed = 0
+    loop = asyncio.get_event_loop()
+    for img in images:
+        if not force and img.id in in_use_ids:
+            continue
+        try:
+            await loop.run_in_executor(
+                None, lambda i=img: client.images.remove(i.id, force=force))
+            removed += 1
+        except Exception:
+            pass
+
+    return {"removed": removed}
 
 
 class SettingsUpdate(BaseModel):
