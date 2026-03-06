@@ -15,7 +15,7 @@
   overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--terminal-bg);
+  background: var(--surface-raised);
 }
 
 .item {
@@ -37,7 +37,7 @@
 }
 
 .item.selected {
-  background: rgba(124, 58, 237, 0.15);
+  background: rgba(37, 99, 235, 0.08);
 }
 
 .item input[type='checkbox'] {

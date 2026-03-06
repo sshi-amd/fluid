@@ -1,22 +1,25 @@
 @import '@xterm/xterm/css/xterm.css';
 
 :root {
-  --bg: #0e0e10;
-  --surface: #18181b;
-  --surface-raised: #1e1e22;
-  --border: #2a2a2e;
-  --border-hover: #3a3a40;
-  --text: #e4e4e7;
-  --text-dim: #71717a;
-  --accent: #7c3aed;
-  --accent-hover: #8b5cf6;
-  --green: #22c55e;
-  --yellow: #eab308;
-  --red: #ef4444;
-  --orange: #f97316;
-  --terminal-bg: #09090b;
-  --sidebar-bg: #111113;
-  --header-bg: #111113;
+  --bg: #eef2f7;
+  --surface: #ffffff;
+  --surface-raised: #f1f5fb;
+  --border: #d0d8e4;
+  --border-hover: #9bacc4;
+  --text: #1a2235;
+  --text-dim: #5e718a;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --green: #16a34a;
+  --yellow: #ca8a04;
+  --red: #dc2626;
+  --orange: #ea580c;
+  --terminal-bg: #0f1117;
+  --sidebar-bg: #ffffff;
+  --header-bg: #ffffff;
+  --scrollbar-thumb: #c2cedc;
+  --scrollbar-thumb-hover: #9bacc4;
+  --shadow: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
 * {

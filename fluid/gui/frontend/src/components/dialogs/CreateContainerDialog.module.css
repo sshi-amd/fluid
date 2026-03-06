@@ -21,7 +21,7 @@
 .input {
   width: 100%;
   padding: 8px 12px;
-  background: var(--terminal-bg);
+  background: var(--surface);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 6px;

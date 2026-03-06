@@ -112,6 +112,6 @@
 }
 
 .logInner::-webkit-scrollbar-thumb {
-  background: #333338;
+  background: var(--scrollbar-thumb);
   border-radius: 2px;
 }
