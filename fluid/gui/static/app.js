@@ -903,23 +903,26 @@ async function loadSettings() {
   try {
     const data = await api("GET", "/settings");
 
-    const akInput = document.getElementById("settings-anthropic-key");
-    const gtInput = document.getElementById("settings-github-token");
+    const fields = [
+      { input: "settings-amd-gateway-key", status: "amd-gateway-key-status",
+        value: data.amd_gateway_key, isSet: data.amd_gateway_key_set, label: "Key" },
+      { input: "settings-anthropic-key", status: "anthropic-key-status",
+        value: data.anthropic_api_key, isSet: data.anthropic_api_key_set, label: "Key" },
+      { input: "settings-github-token", status: "github-token-status",
+        value: data.github_token, isSet: data.github_token_set, label: "Token" },
+    ];
 
-    akInput.value = data.anthropic_api_key || "";
-    akInput.dataset.masked = data.anthropic_api_key_set ? "true" : "false";
+    for (const f of fields) {
+      const input = document.getElementById(f.input);
+      input.value = f.value || "";
+      input.dataset.masked = f.isSet ? "true" : "false";
+      const statusEl = document.getElementById(f.status);
+      statusEl.textContent = f.isSet ? `${f.label} is configured` : "Not set";
+      statusEl.className = `settings-key-status${f.isSet ? " set" : ""}`;
+    }
 
-    gtInput.value = data.github_token || "";
-    gtInput.dataset.masked = data.github_token_set ? "true" : "false";
-
-    const akStatus = document.getElementById("anthropic-key-status");
-    akStatus.textContent = data.anthropic_api_key_set ? "Key is configured" : "Not set";
-    akStatus.className = `settings-key-status${data.anthropic_api_key_set ? " set" : ""}`;
-
-    const gtStatus = document.getElementById("github-token-status");
-    gtStatus.textContent = data.github_token_set ? "Token is configured" : "Not set";
-    gtStatus.className = `settings-key-status${data.github_token_set ? " set" : ""}`;
-
+    document.getElementById("settings-anthropic-base-url").value = data.anthropic_base_url || "";
+    document.getElementById("settings-anthropic-model").value = data.anthropic_model || "";
     document.getElementById("settings-save-status").textContent = "";
   } catch (e) {
     // ignore
@@ -927,22 +930,24 @@ async function loadSettings() {
 }
 
 async function saveSettings() {
-  const akInput = document.getElementById("settings-anthropic-key");
-  const gtInput = document.getElementById("settings-github-token");
-
   const body = {};
 
-  if (akInput.dataset.masked === "true" && akInput.value.includes("*")) {
-    // user didn't change the masked value, skip
-  } else {
-    body.anthropic_api_key = akInput.value.trim();
+  const maskedFields = [
+    { id: "settings-amd-gateway-key", key: "amd_gateway_key" },
+    { id: "settings-anthropic-key", key: "anthropic_api_key" },
+    { id: "settings-github-token", key: "github_token" },
+  ];
+
+  for (const f of maskedFields) {
+    const input = document.getElementById(f.id);
+    if (input.dataset.masked === "true" && input.value.includes("*")) {
+      continue;
+    }
+    body[f.key] = input.value.trim();
   }
 
-  if (gtInput.dataset.masked === "true" && gtInput.value.includes("*")) {
-    // user didn't change the masked value, skip
-  } else {
-    body.github_token = gtInput.value.trim();
-  }
+  body.anthropic_base_url = document.getElementById("settings-anthropic-base-url").value.trim();
+  body.anthropic_model = document.getElementById("settings-anthropic-model").value.trim();
 
   try {
     await api("PUT", "/settings", body);

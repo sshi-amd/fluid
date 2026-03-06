@@ -250,12 +250,15 @@ def create_container_headless(
         volumes[ws] = {"bind": "/workspace", "mode": "rw"}
 
     home = Path.home()
-    for src, dst, mode in [
+    mounts = [
         (home / ".ssh", "/home/developer/.ssh", "ro"),
         (home / ".gitconfig", "/home/developer/.gitconfig", "ro"),
-        (home / ".claude", "/home/developer/.claude", "rw"),
         (home / ".config" / "gh", "/home/developer/.config/gh", "ro"),
-    ]:
+    ]
+    if not config.anthropic_api_key and not config.amd_gateway_key:
+        mounts.append((home / ".claude", "/home/developer/.claude", "rw"))
+
+    for src, dst, mode in mounts:
         if src.exists():
             volumes[str(src)] = {"bind": dst, "mode": mode}
 
@@ -287,6 +290,8 @@ def create_container_headless(
 
     container.start()
 
+    _inject_env_profile(container, config)
+
     record = ContainerRecord(
         name=container_name,
         rocm_version=rocm_version,
@@ -302,6 +307,57 @@ def create_container_headless(
     if on_log:
         on_log(f"Container {container_name} created and started.")
     return record
+
+
+def _inject_env_profile(container, config) -> None:
+    """Write API keys into ~/.config/claude-code/env.sh inside the container
+    and source it from .bashrc, matching the Claude Code expected layout.
+    Also sets hasCompletedOnboarding in ~/.claude.json."""
+    env = config.env_vars()
+    if not env:
+        return
+
+    env_dir = "/home/developer/.config/claude-code"
+    env_file = f"{env_dir}/env.sh"
+    bashrc = "/home/developer/.bashrc"
+    claude_json = "/home/developer/.claude.json"
+
+    lines = []
+    for key, val in env.items():
+        escaped = val.replace('"', '\\"')
+        lines.append(f'export {key}="{escaped}"')
+    env_content = "\n".join(lines) + "\n"
+
+    source_line = f'[ -f "{env_file}" ] && source "{env_file}"'
+
+    script = f"""
+mkdir -p {env_dir}
+cat > {env_file} << 'FLUIDEOF'
+{env_content}FLUIDEOF
+chmod 600 {env_file}
+
+grep -q 'claude-code/env.sh' {bashrc} 2>/dev/null || \
+  printf '\\n# Load Claude Code config\\n{source_line}\\n' >> {bashrc}
+
+if [ -f {claude_json} ]; then
+  python3 -c "
+import json, sys
+try:
+    d = json.load(open('{claude_json}'))
+except: d = {{}}
+d['hasCompletedOnboarding'] = True
+json.dump(d, open('{claude_json}','w'), indent=2)
+" 2>/dev/null || true
+else
+  echo '{{"hasCompletedOnboarding": true}}' > {claude_json}
+fi
+chown -R developer:developer {env_dir} {claude_json}
+"""
+
+    try:
+        container.exec_run(["bash", "-c", script], user="root")
+    except Exception:
+        pass
 
 
 def create_container(

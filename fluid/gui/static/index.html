@@ -82,10 +82,25 @@
 
       <div class="settings-content">
         <div class="settings-section">
-          <h3 class="settings-section-title">Anthropic API Key</h3>
-          <p class="settings-section-desc">Used by Claude Code inside your containers. Set your key from <a href="https://console.anthropic.com/" class="settings-link" target="_blank">console.anthropic.com</a>.</p>
+          <h3 class="settings-section-title">AMD LLM Gateway</h3>
+          <p class="settings-section-desc">Use the AMD LLM Gateway to access Claude Code. Get your key from <a href="https://llm.amd.com" class="settings-link" target="_blank">llm.amd.com</a>. When set, this takes priority over a direct Anthropic API key.</p>
+          <label class="field-label">Gateway Key</label>
           <div class="settings-field-row">
-            <input type="password" id="settings-anthropic-key" class="field-input settings-key-input" placeholder="sk-ant-...">
+            <input type="password" id="settings-amd-gateway-key" class="field-input settings-key-input" placeholder="Your AMD Gateway key">
+            <button class="btn btn-secondary settings-toggle-vis" onclick="toggleKeyVisibility('settings-amd-gateway-key', this)">Show</button>
+          </div>
+          <div class="settings-key-status" id="amd-gateway-key-status"></div>
+          <label class="field-label">Base URL</label>
+          <input type="text" id="settings-anthropic-base-url" class="field-input" placeholder="https://llm-api.amd.com/Anthropic (default)">
+          <label class="field-label">Model</label>
+          <input type="text" id="settings-anthropic-model" class="field-input" placeholder="Claude-Sonnet-4.6 (default)">
+        </div>
+
+        <div class="settings-section">
+          <h3 class="settings-section-title">Anthropic API Key (Direct)</h3>
+          <p class="settings-section-desc">Direct Anthropic API key for Claude Code. Only used if AMD Gateway key is not set. Get one from <a href="https://console.anthropic.com/" class="settings-link" target="_blank">console.anthropic.com</a>.</p>
+          <div class="settings-field-row">
+            <input type="password" id="settings-anthropic-key" class="field-input settings-key-input" placeholder="sk-ant-api03-...">
             <button class="btn btn-secondary settings-toggle-vis" onclick="toggleKeyVisibility('settings-anthropic-key', this)">Show</button>
           </div>
           <div class="settings-key-status" id="anthropic-key-status"></div>
@@ -108,7 +123,7 @@
 
         <div class="settings-section settings-info-section">
           <h3 class="settings-section-title">How keys are used</h3>
-          <p class="settings-section-desc">Keys are stored locally in <code>~/.fluid/config.json</code> (permissions 600) and injected as environment variables into new containers. Existing containers need to be recreated to pick up changed keys.</p>
+          <p class="settings-section-desc">Keys are written to <code>~/.config/claude-code/env.sh</code> inside new containers and sourced from <code>.bashrc</code>. AMD Gateway key takes priority over a direct Anthropic key. Existing containers need to be recreated to pick up changed keys.</p>
         </div>
       </div>
     </div>

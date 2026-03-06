@@ -242,13 +242,17 @@ async def create_container_ws(websocket: WebSocket):
                 volumes[workspace] = {"bind": "/workspace", "mode": "rw"}
 
             home = Path.home()
-            for src, dst, mode in [
+            mounts = [
                 (home / ".ssh", "/home/developer/.ssh", "ro"),
                 (home / ".gitconfig", "/home/developer/.gitconfig", "ro"),
-                (home / ".claude", "/home/developer/.claude", "rw"),
                 (home / ".config" / "gh",
                  "/home/developer/.config/gh", "ro"),
-            ]:
+            ]
+            if not config.anthropic_api_key and not config.amd_gateway_key:
+                mounts.append(
+                    (home / ".claude", "/home/developer/.claude", "rw"))
+
+            for src, dst, mode in mounts:
                 if src.exists():
                     volumes[str(src)] = {"bind": dst, "mode": mode}
 
@@ -275,6 +279,10 @@ async def create_container_ws(websocket: WebSocket):
             )
 
             container.start()
+
+            from fluid.docker_manager import _inject_env_profile
+            _inject_env_profile(container, config)
+
             log(f"Container {container_name} started.\n")
 
             record = ContainerRecord(
@@ -528,6 +536,9 @@ async def clean_images(force: bool = False) -> dict:
 class SettingsUpdate(BaseModel):
     anthropic_api_key: Optional[str] = None
     github_token: Optional[str] = None
+    amd_gateway_key: Optional[str] = None
+    anthropic_base_url: Optional[str] = None
+    anthropic_model: Optional[str] = None
 
 
 @app.get("/api/settings")
@@ -548,12 +559,16 @@ def get_settings() -> dict:
         "github_token": mask(config.github_token),
         "anthropic_api_key_set": bool(config.anthropic_api_key),
         "github_token_set": bool(config.github_token),
+        "amd_gateway_key": mask(config.amd_gateway_key),
+        "amd_gateway_key_set": bool(config.amd_gateway_key),
+        "anthropic_base_url": config.anthropic_base_url or "",
+        "anthropic_model": config.anthropic_model or "",
     }
 
 
 @app.put("/api/settings")
 def update_settings(req: SettingsUpdate) -> dict:
-    from fluid.config import FluidConfig, load_config, save_config
+    from fluid.config import load_config, save_config
 
     config = load_config()
 
@@ -561,6 +576,12 @@ def update_settings(req: SettingsUpdate) -> dict:
         config.anthropic_api_key = req.anthropic_api_key or None
     if req.github_token is not None:
         config.github_token = req.github_token or None
+    if req.amd_gateway_key is not None:
+        config.amd_gateway_key = req.amd_gateway_key or None
+    if req.anthropic_base_url is not None:
+        config.anthropic_base_url = req.anthropic_base_url or None
+    if req.anthropic_model is not None:
+        config.anthropic_model = req.anthropic_model or None
 
     save_config(config)
     return {"status": "saved"}

@@ -89,11 +89,27 @@ def save_state(state: State) -> None:
 class FluidConfig:
     anthropic_api_key: Optional[str] = None
     github_token: Optional[str] = None
+    amd_gateway_key: Optional[str] = None
+    anthropic_base_url: Optional[str] = None
+    anthropic_model: Optional[str] = None
+
+    @property
+    def uses_amd_gateway(self) -> bool:
+        return bool(self.amd_gateway_key)
 
     def env_vars(self) -> dict[str, str]:
         """Return config values as env vars for container injection."""
         env = {}
-        if self.anthropic_api_key:
+        if self.amd_gateway_key:
+            env["ANTHROPIC_API_KEY"] = "dummy"
+            env["ANTHROPIC_BASE_URL"] = self.anthropic_base_url or "https://llm-api.amd.com/Anthropic"
+            env["ANTHROPIC_CUSTOM_HEADERS"] = f"Ocp-Apim-Subscription-Key: {self.amd_gateway_key}"
+            env["ANTHROPIC_MODEL"] = self.anthropic_model or "Claude-Sonnet-4.6"
+            env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = "Claude-Opus-4.6"
+            env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = "Claude-Sonnet-4.6"
+            env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = "Claude-Haiku-4.5"
+            env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
+        elif self.anthropic_api_key:
             env["ANTHROPIC_API_KEY"] = self.anthropic_api_key
         if self.github_token:
             env["GITHUB_TOKEN"] = self.github_token
@@ -109,6 +125,9 @@ def load_config() -> FluidConfig:
         return FluidConfig(
             anthropic_api_key=data.get("anthropic_api_key"),
             github_token=data.get("github_token"),
+            amd_gateway_key=data.get("amd_gateway_key"),
+            anthropic_base_url=data.get("anthropic_base_url"),
+            anthropic_model=data.get("anthropic_model"),
         )
     except (json.JSONDecodeError, TypeError):
         return FluidConfig()
