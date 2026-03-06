@@ -1,0 +1,198 @@
+/* ─── Design tokens (ported from style.css) ────────────────────────────────── */
+:root {
+  --bg: #0e0e10;
+  --surface: #18181b;
+  --surface-raised: #1e1e22;
+  --border: #2a2a2e;
+  --border-hover: #3a3a40;
+  --text: #e4e4e7;
+  --text-dim: #71717a;
+  --accent: #7c3aed;
+  --accent-hover: #8b5cf6;
+  --green: #22c55e;
+  --yellow: #eab308;
+  --red: #ef4444;
+  --orange: #f97316;
+  --terminal-bg: #09090b;
+  --sidebar-bg: #111113;
+  --header-bg: #111113;
+
+  /* Spacing scale */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+
+  /* Typography */
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Cascadia Code", "Fira Code", "JetBrains Mono", "Menlo", monospace;
+  --font-size-xs: 10px;
+  --font-size-sm: 12px;
+  --font-size-base: 13px;
+  --font-size-md: 14px;
+}
+
+/* ─── Reset ─────────────────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: var(--font-size-base);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ─── Scrollbars ─────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-hover);
+}
+
+/* ─── Base elements ─────────────────────────────────────────────────────────── */
+button {
+  font-family: var(--font-ui);
+  font-size: var(--font-size-base);
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+}
+
+input,
+select,
+textarea {
+  font-family: var(--font-ui);
+  font-size: var(--font-size-base);
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--sp-2) var(--sp-3);
+  outline: none;
+  width: 100%;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--accent);
+}
+
+a {
+  color: var(--accent-hover);
+  text-decoration: none;
+}
+
+/* ─── Utility classes ───────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-base);
+  font-weight: 500;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+}
+.btn-primary:hover {
+  background: var(--accent-hover);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+.btn-ghost:hover {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border-hover);
+}
+
+.btn-danger {
+  background: transparent;
+  color: var(--red);
+  border: 1px solid var(--border);
+}
+.btn-danger:hover {
+  background: color-mix(in srgb, var(--red) 15%, transparent);
+  border-color: var(--red);
+}
+
+.badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.badge-running {
+  background: color-mix(in srgb, var(--green) 15%, transparent);
+  color: var(--green);
+}
+.badge-exited {
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+  color: var(--red);
+}
+.badge-created {
+  background: color-mix(in srgb, var(--yellow) 12%, transparent);
+  color: var(--yellow);
+}
+.badge-paused {
+  background: color-mix(in srgb, var(--text-dim) 12%, transparent);
+  color: var(--text-dim);
+}
+
+/* ─── Status dot ────────────────────────────────────────────────────────────── */
+.status-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.status-dot.running { background: var(--green); }
+.status-dot.exited  { background: var(--red); }
+.status-dot.created { background: var(--yellow); }
+.status-dot.paused  { background: var(--text-dim); }

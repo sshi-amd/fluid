@@ -1,0 +1,15 @@
+.header {
+  background: var(--header-bg);
+  border-bottom: 1px solid var(--border);
+  padding: 0 var(--sp-5);
+  height: 48px;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.title {
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--text);
+}
