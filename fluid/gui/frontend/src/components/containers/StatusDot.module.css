@@ -1,0 +1,41 @@
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  flex-shrink: 0;
+  transition: all 0.3s;
+}
+
+.running {
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+}
+
+.claudeActive {
+  background: var(--yellow);
+  box-shadow: 0 0 6px var(--yellow);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.waiting {
+  background: var(--red);
+  box-shadow: 0 0 6px var(--red);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.stopped {
+  background: var(--text-dim);
+  box-shadow: none;
+}
+
+.building {
+  background: var(--orange);
+  box-shadow: 0 0 6px var(--orange);
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}

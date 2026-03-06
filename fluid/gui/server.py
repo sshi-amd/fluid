@@ -793,7 +793,7 @@ async def host_terminal_websocket(websocket: WebSocket):
 
 # --- Static file serving ---
 
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+app.mount("/assets", StaticFiles(directory=str(STATIC_DIR / "assets")), name="assets")
 
 
 @app.get("/")

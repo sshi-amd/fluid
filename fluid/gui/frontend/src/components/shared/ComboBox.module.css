@@ -1,0 +1,102 @@
+.comboBox {
+  position: relative;
+}
+
+.fieldInput {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--terminal-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.fieldInput:focus {
+  border-color: var(--accent);
+}
+
+.comboInput {
+  padding-right: 36px;
+}
+
+.comboToggle {
+  position: absolute;
+  right: 1px;
+  top: 1px;
+  bottom: 1px;
+  width: 34px;
+  background: var(--surface-raised);
+  border: none;
+  border-left: 1px solid var(--border);
+  border-radius: 0 6px 6px 0;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 10px;
+  transition: all 0.15s;
+}
+
+.comboToggle:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+.comboDropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 10;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.comboDropdown.open {
+  display: block;
+}
+
+.comboOption {
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.comboOption:first-child {
+  border-radius: 6px 6px 0 0;
+}
+
+.comboOption:last-child {
+  border-radius: 0 0 6px 6px;
+}
+
+.comboOption.highlighted,
+.comboOption:hover {
+  background: var(--accent);
+  color: white;
+}
+
+.comboOption.active {
+  background: rgba(124, 58, 237, 0.2);
+}
+
+.comboDropdown::-webkit-scrollbar {
+  width: 6px;
+}
+
+.comboDropdown::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.comboDropdown::-webkit-scrollbar-thumb {
+  background: #333338;
+  border-radius: 3px;
+}

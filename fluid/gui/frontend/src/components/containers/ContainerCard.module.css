@@ -1,0 +1,124 @@
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  min-height: 320px;
+  transition: border-color 0.15s;
+}
+
+.card:hover {
+  border-color: var(--border-hover);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--surface-raised);
+  border-radius: 10px 10px 0 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.cardInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.cardTitle {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cardSubtitle {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cardStatus {
+  font-size: 11px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.menuBtn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 2px 8px;
+  font-size: 16px;
+  line-height: 1;
+  transition: all 0.15s;
+}
+
+.menuBtn:hover {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border-hover);
+}
+
+.cardTerminal {
+  flex: 1;
+  padding: 2px;
+  background: var(--terminal-bg);
+  min-height: 200px;
+  position: relative;
+}
+
+.cardTerminal .xterm {
+  height: 100%;
+}
+
+.terminalPlaceholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.cardFooter {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 10px 10px;
+}
+
+.cardFooter :global(.btn) {
+  padding: 5px 12px;
+  font-size: 11px;
+}
+
+.tabGroup {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex: 1;
+}
+
+.tabBtn {
+  border-radius: 6px 0 0 6px !important;
+}
+
+.tabBtn + .tabBtn {
+  border-radius: 0 6px 6px 0 !important;
+  border-left: none !important;
+}
+
+.active {
+  font-weight: 700;
+  color: var(--text) !important;
+}
