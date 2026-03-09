@@ -78,7 +78,7 @@ export function useRemoveImage() {
 export function useCleanImages() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (force = false) =>
+    mutationFn: (force: boolean) =>
       api.post<{ removed: number }>(`/images/clean?force=${force}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["images"] }),
   });
