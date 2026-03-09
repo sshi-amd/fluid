@@ -98,11 +98,21 @@ export default function TerminalPanel({ wsUrl, active = true }: Props) {
     };
   }, [wsUrl]); // re-create only if the WS URL changes
 
-  // Re-fit when this panel becomes visible
+  // Re-fit, send resize to PTY, and grab focus when this panel becomes visible
   useEffect(() => {
-    if (active && fitRef.current) {
-      // Defer so the DOM has had time to paint at new dimensions
-      setTimeout(() => fitRef.current?.fit(), 50);
+    if (active && fitRef.current && termRef.current) {
+      const id = setTimeout(() => {
+        const fit = fitRef.current;
+        const term = termRef.current;
+        const ws = wsRef.current;
+        if (!fit || !term) return;
+        fit.fit();
+        if (ws?.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+        }
+        term.focus();
+      }, 60);
+      return () => clearTimeout(id);
     }
   }, [active]);
 

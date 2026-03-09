@@ -9,6 +9,9 @@ import styles from "./ContainersPage.module.css";
 export default function ContainersPage() {
   const { data: containers = [], isError } = useContainers();
   const [showCreate, setShowCreate] = useState(false);
+  const [currentPanel, setCurrentPanel] = useState<"containers" | "host">("containers");
+
+  
 
   return (
     <div className={styles.page}>
