@@ -642,6 +642,8 @@ async def terminal_websocket(websocket: WebSocket, name: str,
     try:
         while True:
             msg = await websocket.receive()
+            if not isinstance(msg, dict):
+                break
             if msg.get("type") == "websocket.disconnect":
                 break
 
@@ -651,7 +653,7 @@ async def terminal_websocket(websocket: WebSocket, name: str,
                 text = msg["text"]
                 try:
                     parsed = json.loads(text)
-                    if parsed.get("type") == "resize":
+                    if isinstance(parsed, dict) and parsed.get("type") == "resize":
                         session.resize(parsed.get("cols", 120),
                                        parsed.get("rows", 30))
                         continue
@@ -761,6 +763,8 @@ async def host_terminal_websocket(websocket: WebSocket):
     try:
         while True:
             msg = await websocket.receive()
+            if not isinstance(msg, dict):
+                break
             if msg.get("type") == "websocket.disconnect":
                 break
 
@@ -770,7 +774,7 @@ async def host_terminal_websocket(websocket: WebSocket):
                 text = msg["text"]
                 try:
                     parsed = json.loads(text)
-                    if parsed.get("type") == "resize":
+                    if isinstance(parsed, dict) and parsed.get("type") == "resize":
                         session.resize(parsed.get("cols", 120),
                                        parsed.get("rows", 10))
                         continue
