@@ -806,35 +806,7 @@ def serve_spa(path: str = ""):
 
 
 def run(host: str = "127.0.0.1", port: int = 5000) -> None:
-    """Start the Fluid GUI as a native desktop window."""
-    import threading
-
+    """Start the Fluid backend server (Electron spawns this as a child process)."""
     import uvicorn
-    import webview
 
-    server_started = threading.Event()
-
-    class _Server(uvicorn.Server):
-        def startup(self, sockets=None):
-            result = super().startup(sockets)
-            server_started.set()
-            return result
-
-    def _run_server():
-        config = uvicorn.Config(app, host=host, port=port, log_level="warning")
-        server = _Server(config)
-        server.run()
-
-    server_thread = threading.Thread(target=_run_server, daemon=True)
-    server_thread.start()
-    server_started.wait(timeout=10)
-
-    window = webview.create_window(
-        "Fluid",
-        url=f"http://{host}:{port}",
-        width=1300,
-        height=850,
-        min_size=(900, 600),
-        background_color="#0e0e10",
-    )
-    webview.start()
+    uvicorn.run(app, host=host, port=port, log_level="warning")
