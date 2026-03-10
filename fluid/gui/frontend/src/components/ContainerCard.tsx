@@ -76,13 +76,13 @@ export default function ContainerCard({ container }: Props) {
           </div>
           <div className={styles.terminalWrap}>
             {/* Keep both panels mounted but show only the active one so sessions persist */}
-            <div style={{ display: activeTab === "bash" ? "flex" : "none", flex: 1, minHeight: 0 }}>
+            <div style={{ display: activeTab === "bash" ? "flex" : "none", flex: 1, minHeight: 0, minWidth: 0 }}>
               <TerminalPanel
                 wsUrl={terminalWsUrl("/bin/bash")}
                 active={activeTab === "bash"}
               />
             </div>
-            <div style={{ display: activeTab === "claude" ? "flex" : "none", flex: 1, minHeight: 0 }}>
+            <div style={{ display: activeTab === "claude" ? "flex" : "none", flex: 1, minHeight: 0, minWidth: 0 }}>
               <TerminalPanel
                 wsUrl={terminalWsUrl("claude")}
                 active={activeTab === "claude"}

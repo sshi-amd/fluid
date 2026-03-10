@@ -22,6 +22,7 @@ logger = logging.getLogger("fluid.gui")
 STATIC_DIR = Path(__file__).parent / "static"
 
 _active_sessions: dict[str, PtySession] = {}
+_build_queue: list[CreateContainerRequest] = []
 
 
 @asynccontextmanager
@@ -52,6 +53,12 @@ class ContainerInfo(BaseModel):
     status: str
     rocm_version: str
     workspace: str
+
+class QueueItem(BaseModel):
+    type : str
+    name : str
+
+
 
 
 # --- REST endpoints ---

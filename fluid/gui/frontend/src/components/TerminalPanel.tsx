@@ -44,7 +44,10 @@ export default function TerminalPanel({ wsUrl, active = true }: Props) {
     ws.binaryType = "arraybuffer";
     wsRef.current = ws;
 
-    ws.onopen = () => fit.fit();
+    ws.onopen = () => {
+      fit.fit();
+      ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+    };
 
     ws.onmessage = (ev) => {
       if (ev.data instanceof ArrayBuffer) {
@@ -77,18 +80,26 @@ export default function TerminalPanel({ wsUrl, active = true }: Props) {
       }
     });
 
-    // Resize: notify the PTY
+    let lastCols = term.cols;
+    let lastRows = term.rows;
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
     const ro = new ResizeObserver(() => {
-      fit.fit();
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(
-          JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows })
-        );
-      }
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        fit.fit();
+        if (term.cols !== lastCols || term.rows !== lastRows) {
+          lastCols = term.cols;
+          lastRows = term.rows;
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+          }
+        }
+      }, 100);
     });
     ro.observe(containerRef.current!);
 
     return () => {
+      if (resizeTimer) clearTimeout(resizeTimer);
       ro.disconnect();
       ws.close();
       term.dispose();
@@ -122,6 +133,7 @@ export default function TerminalPanel({ wsUrl, active = true }: Props) {
       style={{
         flex: 1,
         minHeight: 0,
+        minWidth: 0,
         padding: "4px",
         background: "var(--terminal-bg)",
       }}

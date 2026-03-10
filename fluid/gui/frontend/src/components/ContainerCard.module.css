@@ -55,7 +55,8 @@
 .terminalArea {
   display: flex;
   flex-direction: column;
-  height: 280px;
+  height: 480px;
+  min-width: 0;
   border-top: 1px solid var(--border);
   background: var(--terminal-bg);
 }
@@ -89,6 +90,7 @@
 .terminalWrap {
   flex: 1;
   min-height: 0;
+  min-width: 0;
   display: flex;
   overflow: hidden;
 }
