@@ -66,7 +66,6 @@ export interface ContainerInfo {
   name: string;
   display_name: string;
   status: string;
-  rocm_version: string;
   workspace: string;
 }
 
@@ -74,20 +73,14 @@ export interface ImageInfo {
   id: string;
   short_id: string;
   tag: string;
-  rocm_version: string;
   size_mb: number;
   created: string;
   in_use: boolean;
 }
 
 export interface AppConfig {
-  default_rocm_version: string;
   default_distro: string;
   distros: string[];
-  rocm_versions: string[];
-  therock_versions: string[];
-  therock_gpu_families: string[];
-  therock_release_types: string[];
 }
 
 export interface Settings {
@@ -103,9 +96,6 @@ export interface Settings {
 
 export interface CreateContainerRequest {
   name?: string;
-  rocm_version?: string;
   distro?: string;
   workspace?: string;
-  gpu_family?: string;
-  release_type?: string;
 }

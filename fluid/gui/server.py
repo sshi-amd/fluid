@@ -40,18 +40,14 @@ app = FastAPI(title="Fluid GUI", lifespan=lifespan)
 
 class CreateContainerRequest(BaseModel):
     name: Optional[str] = None
-    rocm_version: str = "latest"
     distro: str = "ubuntu-22.04"
     workspace: Optional[str] = None
-    gpu_family: Optional[str] = None
-    release_type: str = "nightlies"
 
 
 class ContainerInfo(BaseModel):
     name: str
     display_name: str
     status: str
-    rocm_version: str
     workspace: str
 
 class QueueItem(BaseModel):
@@ -66,7 +62,7 @@ class QueueItem(BaseModel):
 @app.get("/api/containers")
 def list_containers() -> list[ContainerInfo]:
     import docker
-    from fluid.config import LABEL_MANAGED, LABEL_ROCM_VERSION
+    from fluid.config import LABEL_MANAGED
 
     try:
         client = docker.from_env()
@@ -91,7 +87,6 @@ def list_containers() -> list[ContainerInfo]:
             name=c.name,
             display_name=c.name.removeprefix("fluid-"),
             status=c.status,
-            rocm_version=c.labels.get(LABEL_ROCM_VERSION, "?"),
             workspace=workspace,
         ))
 
@@ -103,7 +98,6 @@ def create_container(req: CreateContainerRequest) -> ContainerInfo:
     from fluid.docker_manager import create_container_headless
 
     record = create_container_headless(
-        rocm_version=req.rocm_version,
         name=req.name,
         workspace=req.workspace,
         distro=req.distro,
@@ -113,7 +107,6 @@ def create_container(req: CreateContainerRequest) -> ContainerInfo:
         name=record.name,
         display_name=record.display_name(),
         status="running",
-        rocm_version=record.rocm_version,
         workspace=record.workspace_mount or "",
     )
 
@@ -134,21 +127,17 @@ async def create_container_ws(websocket: WebSocket):
         return
 
     req_name = msg.get("name")
-    rocm_version = msg.get("rocm_version", "latest")
     distro = msg.get("distro", "ubuntu-22.04")
     workspace = msg.get("workspace")
-    gpu_family = msg.get("gpu_family", "")
-    release_type = msg.get("release_type", "nightlies")
 
     from fluid.config import make_container_name
-    container_name = make_container_name(req_name, rocm_version)
+    container_name = make_container_name(req_name)
     display_name = container_name.removeprefix("fluid-")
 
     await websocket.send_json({
         "type": "init",
         "name": container_name,
         "display_name": display_name,
-        "rocm_version": rocm_version,
     })
 
     import io
@@ -161,13 +150,11 @@ async def create_container_ws(websocket: WebSocket):
     from fluid.config import (
         IMAGE_PREFIX,
         LABEL_MANAGED,
-        LABEL_ROCM_VERSION,
         ContainerRecord,
         load_config,
         load_state,
         save_state,
     )
-    from fluid.docker_manager import _resolve_device_gids
     from fluid.dockerfile import generate_dockerfile
 
     msg_queue: queue.Queue = queue.Queue()
@@ -183,10 +170,7 @@ async def create_container_ws(websocket: WebSocket):
         try:
             client = docker.from_env()
 
-            tag_suffix = f"{distro}-{rocm_version}"
-            if gpu_family:
-                tag_suffix += f"-{gpu_family}"
-            image_tag = f"{IMAGE_PREFIX}:{tag_suffix}"
+            image_tag = f"{IMAGE_PREFIX}:{distro}"
             try:
                 client.images.get(image_tag)
                 log(f"Using existing image {image_tag}\n")
@@ -194,10 +178,7 @@ async def create_container_ws(websocket: WebSocket):
                 log(f"Building image {image_tag}...\n")
                 emit({"type": "phase", "phase": "building_image"})
 
-                dockerfile_content = generate_dockerfile(
-                    rocm_version, distro=distro,
-                    gpu_family=gpu_family,
-                    release_type=release_type)
+                dockerfile_content = generate_dockerfile(distro=distro)
                 try:
                     stream = client.api.build(
                         fileobj=io.BytesIO(dockerfile_content.encode()),
@@ -263,8 +244,7 @@ async def create_container_ws(websocket: WebSocket):
                 if src.exists():
                     volumes[str(src)] = {"bind": dst, "mode": mode}
 
-            host_gids = _resolve_device_gids()
-            env = {"ROCM_VERSION": rocm_version}
+            env = {}
             env.update(config.env_vars())
 
             container = client.containers.create(
@@ -275,13 +255,7 @@ async def create_container_ws(websocket: WebSocket):
                 tty=True,
                 detach=True,
                 volumes=volumes,
-                devices=["/dev/kfd", "/dev/dri"],
-                group_add=host_gids,
-                security_opt=["seccomp=unconfined"],
-                labels={
-                    LABEL_MANAGED: "true",
-                    LABEL_ROCM_VERSION: rocm_version,
-                },
+                labels={LABEL_MANAGED: "true"},
                 environment=env,
             )
 
@@ -294,7 +268,7 @@ async def create_container_ws(websocket: WebSocket):
 
             record = ContainerRecord(
                 name=container_name,
-                rocm_version=rocm_version,
+                distro=distro,
                 created_at=datetime.now(timezone.utc).isoformat(),
                 container_id=container.id,
                 image_id=image_tag,
@@ -311,7 +285,6 @@ async def create_container_ws(websocket: WebSocket):
                     "name": container_name,
                     "display_name": display_name,
                     "status": "running",
-                    "rocm_version": rocm_version,
                     "workspace": workspace or "",
                 },
             })
@@ -430,32 +403,18 @@ async def remove_container(name: str) -> dict:
 
 @app.get("/api/config")
 def get_config() -> dict:
-    from fluid.config import DEFAULT_DISTRO, DEFAULT_ROCM_VERSION, SUPPORTED_DISTROS
-    from fluid.dockerfile import THEROCK_GPU_FAMILIES, THEROCK_RELEASE_TYPES
+    from fluid.config import DEFAULT_DISTRO, SUPPORTED_DISTROS
 
     return {
-        "default_rocm_version": DEFAULT_ROCM_VERSION,
         "default_distro": DEFAULT_DISTRO,
         "distros": list(SUPPORTED_DISTROS),
-        "rocm_versions": [
-            "6.4", "6.3.3", "6.3.2", "6.3.1", "6.3",
-            "6.2.4", "6.2", "6.1.3", "6.1", "latest",
-        ],
-        "therock_versions": [
-            "7.12.0a20260304",
-            "7.11.0rc2",
-            "7.11.0rc1",
-            "7.10.0rc2",
-        ],
-        "therock_gpu_families": THEROCK_GPU_FAMILIES,
-        "therock_release_types": THEROCK_RELEASE_TYPES,
     }
 
 
 @app.get("/api/images")
 def list_images() -> list[dict]:
     import docker
-    from fluid.config import LABEL_MANAGED, LABEL_ROCM_VERSION
+    from fluid.config import LABEL_MANAGED
 
     try:
         client = docker.from_env()
@@ -477,7 +436,6 @@ def list_images() -> list[dict]:
             "id": img.id,
             "short_id": img.short_id.removeprefix("sha256:"),
             "tag": tag,
-            "rocm_version": img.labels.get(LABEL_ROCM_VERSION, "?"),
             "size_mb": size_mb,
             "created": created,
             "in_use": img.id in in_use_ids,

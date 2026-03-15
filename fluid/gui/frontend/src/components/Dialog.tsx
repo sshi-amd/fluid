@@ -9,17 +9,9 @@ interface Props {
 
 export default function Dialog({ onClose }: Props) {
   const { data: config } = useConfig();
-  const [form, setForm] = useState({
-    name: "",
-    rocm_version: "",
-    distro: "",
-    workspace: "",
-    gpu_family: "",
-    release_type: "nightlies",
-  });
+  const [form, setForm] = useState({ name: "", distro: "", workspace: "" });
   const backdropRef = useRef<HTMLDivElement>(null);
 
-  // Close on Escape
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
@@ -28,15 +20,9 @@ export default function Dialog({ onClose }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  // Populate defaults from config
   useEffect(() => {
     if (config) {
-      setForm((f) => ({
-        ...f,
-        rocm_version: f.rocm_version || config.default_rocm_version,
-        distro: f.distro || config.default_distro,
-        gpu_family: f.gpu_family || config.therock_gpu_families?.[0] || "",
-      }));
+      setForm((f) => ({ ...f, distro: f.distro || config.default_distro }));
     }
   }, [config]);
 
@@ -48,16 +34,11 @@ export default function Dialog({ onClose }: Props) {
     e.preventDefault();
     submitCreate({
       name: form.name || undefined,
-      rocm_version: form.rocm_version,
       distro: form.distro,
       workspace: form.workspace || undefined,
-      gpu_family: form.gpu_family || undefined,
-      release_type: form.release_type,
     });
     onClose();
   }
-
-  const isTheRock = form.distro?.startsWith("therock");
 
   return (
     <div className={styles.backdrop} ref={backdropRef} onClick={handleBackdrop}>
@@ -89,58 +70,6 @@ export default function Dialog({ onClose }: Props) {
               ))}
             </select>
           </label>
-
-          {isTheRock ? (
-            <>
-              <label className={styles.field}>
-                <span className={styles.label}>TheRock Version</span>
-                <select
-                  value={form.rocm_version}
-                  onChange={(e) => setForm({ ...form, rocm_version: e.target.value })}
-                >
-                  {(config?.therock_versions ?? []).map((v) => (
-                    <option key={v} value={v}>{v}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label className={styles.field}>
-                <span className={styles.label}>GPU Family</span>
-                <select
-                  value={form.gpu_family}
-                  onChange={(e) => setForm({ ...form, gpu_family: e.target.value })}
-                >
-                  {(config?.therock_gpu_families ?? []).map((f) => (
-                    <option key={f} value={f}>{f}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label className={styles.field}>
-                <span className={styles.label}>Release Type</span>
-                <select
-                  value={form.release_type}
-                  onChange={(e) => setForm({ ...form, release_type: e.target.value })}
-                >
-                  {(config?.therock_release_types ?? []).map((t) => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
-                </select>
-              </label>
-            </>
-          ) : (
-            <label className={styles.field}>
-              <span className={styles.label}>ROCm Version</span>
-              <select
-                value={form.rocm_version}
-                onChange={(e) => setForm({ ...form, rocm_version: e.target.value })}
-              >
-                {(config?.rocm_versions ?? []).map((v) => (
-                  <option key={v} value={v}>{v}</option>
-                ))}
-              </select>
-            </label>
-          )}
 
           <label className={styles.field}>
             <span className={styles.label}>Workspace path (optional)</span>

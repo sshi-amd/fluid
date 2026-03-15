@@ -15,22 +15,17 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 CONTAINER_PREFIX = "fluid"
 IMAGE_PREFIX = "fluid"
 LABEL_MANAGED = "fluid.managed"
-LABEL_ROCM_VERSION = "fluid.rocm_version"
-DEFAULT_ROCM_VERSION = "latest"
 DEFAULT_DISTRO = "ubuntu-22.04"
 SUPPORTED_DISTROS = (
     "ubuntu-22.04",
     "ubuntu-24.04",
-    "almalinux-8",
-    "therock-ubuntu-24.04",
-    "therock-ubuntu-22.04",
 )
 
 
 @dataclass
 class ContainerRecord:
     name: str
-    rocm_version: str
+    distro: str
     created_at: str
     container_id: Optional[str] = None
     image_id: Optional[str] = None
@@ -68,9 +63,13 @@ def load_state() -> State:
         return State()
     try:
         data = json.loads(STATE_FILE.read_text())
-        containers = {
-            k: ContainerRecord(**v) for k, v in data.get("containers", {}).items()
-        }
+        containers = {}
+        for k, v in data.get("containers", {}).items():
+            # Migrate old records that used rocm_version instead of distro
+            if "rocm_version" in v and "distro" not in v:
+                v = {**v, "distro": DEFAULT_DISTRO}
+                del v["rocm_version"]
+            containers[k] = ContainerRecord(**v)
         return State(current=data.get("current"), containers=containers)
     except (json.JSONDecodeError, TypeError, KeyError):
         return State()
@@ -140,10 +139,10 @@ def save_config(config: FluidConfig) -> None:
     CONFIG_FILE.chmod(0o600)
 
 
-def make_container_name(name: Optional[str], rocm_version: str) -> str:
+def make_container_name(name: Optional[str]) -> str:
     if name:
         if not name.startswith(f"{CONTAINER_PREFIX}-"):
             return f"{CONTAINER_PREFIX}-{name}"
         return name
     ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    return f"{CONTAINER_PREFIX}-{rocm_version}-{ts}"
+    return f"{CONTAINER_PREFIX}-{ts}"

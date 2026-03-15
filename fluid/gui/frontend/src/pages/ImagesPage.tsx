@@ -37,7 +37,6 @@ export default function ImagesPage() {
           <thead>
             <tr>
               <th>Tag</th>
-              <th>ROCm</th>
               <th>Size</th>
               <th>Created</th>
               <th>In Use</th>
@@ -48,7 +47,6 @@ export default function ImagesPage() {
             {images.map((img) => (
               <tr key={img.id}>
                 <td className={styles.tag}>{img.tag}</td>
-                <td>{img.rocm_version}</td>
                 <td>{img.size_mb} MB</td>
                 <td>{new Date(img.created).toLocaleDateString()}</td>
                 <td>

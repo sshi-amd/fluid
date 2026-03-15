@@ -47,14 +47,13 @@ export default function ContainerCard({ container }: Props) {
           <span className={styles.name}>{container.display_name}</span>
           <span className={`badge badge-${statusClass}`}>{container.status}</span>
         </div>
-        <div className={styles.meta}>
-          <span>ROCm {container.rocm_version}</span>
-          {container.workspace && (
+        {container.workspace && (
+          <div className={styles.meta}>
             <span className={styles.workspace} title={container.workspace}>
               {container.workspace.replace(/^.*\//, "…/")}
             </span>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* ── Terminal area ── */}

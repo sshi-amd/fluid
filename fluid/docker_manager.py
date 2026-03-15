@@ -18,20 +18,12 @@ from fluid.config import (
     CONTAINER_PREFIX,
     IMAGE_PREFIX,
     LABEL_MANAGED,
-    LABEL_ROCM_VERSION,
     ContainerRecord,
     State,
     load_config,
     load_state,
     make_container_name,
     save_state,
-)
-from fluid.detect import (
-    check_compatibility,
-    detect_host,
-    has_blocking_errors,
-    print_host_info,
-    print_warnings,
 )
 from fluid.dockerfile import generate_dockerfile
 
@@ -49,26 +41,6 @@ def get_client() -> docker.DockerClient:
         raise SystemExit(1)
 
 
-def _resolve_device_gids() -> list[str]:
-    """Get the numeric GIDs that own /dev/kfd and /dev/dri render nodes."""
-    gids: set[int] = set()
-    for dev in ["/dev/kfd", "/dev/dri/renderD128", "/dev/dri"]:
-        p = Path(dev)
-        if p.exists():
-            try:
-                gids.add(p.stat().st_gid)
-            except OSError:
-                pass
-    try:
-        import grp
-        for name in ("video", "render"):
-            try:
-                gids.add(grp.getgrnam(name).gr_gid)
-            except KeyError:
-                pass
-    except ImportError:
-        pass
-    return [str(g) for g in sorted(gids)]
 
 
 
@@ -129,61 +101,19 @@ def remove_images(force: bool = False) -> None:
     console.print(f"[green]Removed {len(images)} image(s).[/green]")
 
 
-def build_image(
-    client: docker.DockerClient,
-    rocm_version: str,
-    distro: str = "ubuntu-22.04",
-    tag: Optional[str] = None,
-) -> str:
-    tag = tag or f"{IMAGE_PREFIX}:{rocm_version}"
-    dockerfile_content = generate_dockerfile(rocm_version, distro=distro)
-
-    console.print(f"[cyan]Building image [bold]{tag}[/bold]...[/cyan]")
-
-    try:
-        image, build_logs = client.images.build(
-            fileobj=io.BytesIO(dockerfile_content.encode()),
-            tag=tag,
-            rm=True,
-            forcerm=True,
-        )
-    except docker.errors.BuildError as e:
-        console.print(f"[red]Build failed:[/red]")
-        for chunk in e.build_log:
-            if "stream" in chunk:
-                console.print(chunk["stream"].rstrip())
-        raise SystemExit(1)
-
-    for chunk in build_logs:
-        if "stream" in chunk:
-            line = chunk["stream"].rstrip()
-            if line:
-                console.print(f"  [dim]{line}[/dim]")
-
-    console.print(f"[green]Image built:[/green] {tag}")
-    return tag
-
-
 def build_image_headless(
     client: docker.DockerClient,
-    rocm_version: str,
     distro: str = "ubuntu-22.04",
     tag: Optional[str] = None,
     on_log: Optional[callable] = None,
-    gpu_family: Optional[str] = None,
-    release_type: str = "nightlies",
 ) -> str:
     """Build an image without rich output or SystemExit.
 
     Raises docker.errors.BuildError on failure instead of exiting.
     ``on_log`` receives individual log lines if provided.
     """
-    tag = tag or f"{IMAGE_PREFIX}:{rocm_version}"
-    dockerfile_content = generate_dockerfile(
-        rocm_version, distro=distro,
-        gpu_family=gpu_family or "",
-        release_type=release_type,
-    )
+    tag = tag or f"{IMAGE_PREFIX}:{distro}"
+    dockerfile_content = generate_dockerfile(distro=distro)
 
     image, build_logs = client.images.build(
         fileobj=io.BytesIO(dockerfile_content.encode()),
@@ -202,13 +132,10 @@ def build_image_headless(
 
 
 def create_container_headless(
-    rocm_version: str,
     name: Optional[str] = None,
     workspace: Optional[str] = None,
     distro: str = "ubuntu-22.04",
     on_log: Optional[callable] = None,
-    gpu_family: Optional[str] = None,
-    release_type: str = "nightlies",
 ) -> ContainerRecord:
     """Create a container without rich output or SystemExit.
 
@@ -220,16 +147,13 @@ def create_container_headless(
     client = docker.from_env()
     state = load_state()
 
-    container_name = make_container_name(name, rocm_version)
+    container_name = make_container_name(name)
 
     existing = _find_container(client, container_name)
     if existing:
         raise ValueError(f"Container {container_name} already exists.")
 
-    tag_suffix = f"{distro}-{rocm_version}"
-    if gpu_family:
-        tag_suffix += f"-{gpu_family}"
-    image_tag = f"{IMAGE_PREFIX}:{tag_suffix}"
+    image_tag = f"{IMAGE_PREFIX}:{distro}"
     try:
         client.images.get(image_tag)
         if on_log:
@@ -237,10 +161,7 @@ def create_container_headless(
     except ImageNotFound:
         if on_log:
             on_log(f"Building image {image_tag}...")
-        build_image_headless(client, rocm_version, distro=distro,
-                             tag=image_tag, on_log=on_log,
-                             gpu_family=gpu_family,
-                             release_type=release_type)
+        build_image_headless(client, distro=distro, tag=image_tag, on_log=on_log)
 
     config = load_config()
 
@@ -262,9 +183,7 @@ def create_container_headless(
         if src.exists():
             volumes[str(src)] = {"bind": dst, "mode": mode}
 
-    host_gids = _resolve_device_gids()
-
-    env = {"ROCM_VERSION": rocm_version}
+    env = {}
     env.update(config.env_vars())
 
     if on_log:
@@ -278,13 +197,7 @@ def create_container_headless(
         tty=True,
         detach=True,
         volumes=volumes,
-        devices=["/dev/kfd", "/dev/dri"],
-        group_add=host_gids,
-        security_opt=["seccomp=unconfined"],
-        labels={
-            LABEL_MANAGED: "true",
-            LABEL_ROCM_VERSION: rocm_version,
-        },
+        labels={LABEL_MANAGED: "true"},
         environment=env,
     )
 
@@ -294,7 +207,7 @@ def create_container_headless(
 
     record = ContainerRecord(
         name=container_name,
-        rocm_version=rocm_version,
+        distro=distro,
         created_at=datetime.now(timezone.utc).isoformat(),
         container_id=container.id,
         image_id=image_tag,
@@ -361,30 +274,13 @@ chown -R developer:developer {env_dir} {claude_json}
 
 
 def create_container(
-    rocm_version: str,
     name: Optional[str] = None,
     workspace: Optional[str] = None,
-    force: bool = False,
     distro: str = "ubuntu-22.04",
 ) -> ContainerRecord:
     client = get_client()
 
-    host = detect_host()
-    print_host_info(host)
-    console.print()
-
-    warnings = check_compatibility(host, rocm_version)
-    print_warnings(warnings)
-    console.print()
-
-    if has_blocking_errors(warnings) and not force:
-        console.print(
-            "[red bold]Compatibility errors detected.[/red bold] "
-            "Use [bold]--force[/bold] to create anyway."
-        )
-        raise SystemExit(1)
-
-    container_name = make_container_name(name, rocm_version)
+    container_name = make_container_name(name)
 
     existing = _find_container(client, container_name)
     if existing:
@@ -393,17 +289,13 @@ def create_container(
         )
         raise SystemExit(1)
 
-    console.print(
-        f"[cyan]Creating container [bold]{container_name}[/bold] "
-        f"(ROCm {rocm_version})...[/cyan]"
-    )
+    console.print(f"[cyan]Creating container [bold]{container_name}[/bold]...[/cyan]")
 
     def _cli_log(msg: str) -> None:
         console.print(f"  [dim]{msg}[/dim]")
 
     try:
         record = create_container_headless(
-            rocm_version=rocm_version,
             name=name,
             workspace=workspace or os.getcwd(),
             distro=distro,
@@ -413,10 +305,7 @@ def create_container(
         console.print(f"[yellow]{e}[/yellow]")
         raise SystemExit(1)
 
-    console.print(
-        f"[green]Container [bold]{record.name}[/bold] created and started "
-        f"(ROCm {rocm_version})[/green]"
-    )
+    console.print(f"[green]Container [bold]{record.name}[/bold] created and started.[/green]")
     return record
 
 
@@ -458,10 +347,7 @@ def enter_container(name: str) -> None:
     state.current = name
     save_state(state)
 
-    console.print(
-        f"[green]Entering [bold]{name}[/bold] "
-        f"(ROCm {container.labels.get(LABEL_ROCM_VERSION, '?')})...[/green]"
-    )
+    console.print(f"[green]Entering [bold]{name}[/bold]...[/green]")
 
     _exec_into(name)
     _handle_post_exit(name)
@@ -490,8 +376,6 @@ def kill_container(name: Optional[str] = None) -> None:
         console.print(f"[red]Container [bold]{name}[/bold] not found.[/red]")
         raise SystemExit(1)
 
-    version = container.labels.get(LABEL_ROCM_VERSION, "?")
-
     if container.status == "running":
         console.print(f"[yellow]Stopping [bold]{name}[/bold]...[/yellow]")
         container.stop(timeout=5)
@@ -502,9 +386,7 @@ def kill_container(name: Optional[str] = None) -> None:
     state.remove(name)
     save_state(state)
 
-    console.print(
-        f"[green]Container [bold]{name}[/bold] (ROCm {version}) removed.[/green]"
-    )
+    console.print(f"[green]Container [bold]{name}[/bold] removed.[/green]")
 
 
 def kill_all_containers() -> None:
@@ -517,7 +399,6 @@ def kill_all_containers() -> None:
         return
 
     for c in containers:
-        version = c.labels.get(LABEL_ROCM_VERSION, "?")
         if c.status == "running":
             console.print(f"[yellow]Stopping [bold]{c.name}[/bold]...[/yellow]")
             c.stop(timeout=5)
@@ -595,10 +476,7 @@ def open_claude_code(name: str) -> None:
         cmd.extend(["-e", f"{key}={val}"])
     cmd.extend([name, "claude"])
 
-    console.print(
-        f"[green]Opening Claude Code in [bold]{name}[/bold] "
-        f"(ROCm {container.labels.get(LABEL_ROCM_VERSION, '?')})...[/green]"
-    )
+    console.print(f"[green]Opening Claude Code in [bold]{name}[/bold]...[/green]")
     subprocess.run(cmd)
     _handle_post_exit(name)
 
