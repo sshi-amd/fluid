@@ -5,7 +5,7 @@ const { spawn } = require("child_process");
 const path = require("path");
 
 const isDev = !app.isPackaged;
-const API_PORT = 5000;
+const API_PORT = 5174;
 const DEV_URL = "http://localhost:5173";
 
 let mainWindow = null;
@@ -100,8 +100,7 @@ async function createWindow() {
     await mainWindow.loadURL(DEV_URL);
     mainWindow.webContents.openDevTools({ mode: "detach" });
   } else {
-    const distIndex = path.join(__dirname, "..", "dist", "index.html");
-    await mainWindow.loadFile(distIndex);
+    await mainWindow.loadURL(`http://127.0.0.1:${API_PORT}/`);
   }
 
   // Open external links in the default browser rather than Electron
