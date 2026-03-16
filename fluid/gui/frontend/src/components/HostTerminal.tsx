@@ -128,6 +128,7 @@ export default function HostTerminal() {
                 display: activeTab === t.id ? "flex" : "none",
                 flex: 1,
                 minHeight: 0,
+                minWidth: 0,
               }}
             >
               <TerminalPanel wsUrl={t.wsUrl} active={activeTab === t.id} />
