@@ -2,7 +2,7 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
 }
 
 .toolbar {
@@ -12,11 +12,13 @@
   padding: var(--sp-4) var(--sp-5);
   flex-shrink: 0;
   border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--surface);
 }
 
 .grid {
-  flex: 1;
-  overflow-y: auto;
   padding: var(--sp-4) var(--sp-5);
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(660px, 1fr));
