@@ -11,6 +11,7 @@ interface Props {
 }
 
 export default function TerminalPanel({ wsUrl, active = true }: Props) {
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -96,7 +97,7 @@ export default function TerminalPanel({ wsUrl, active = true }: Props) {
         }
       }, 100);
     });
-    ro.observe(containerRef.current!);
+    ro.observe(wrapperRef.current!);
 
     return () => {
       if (resizeTimer) clearTimeout(resizeTimer);
@@ -129,14 +130,19 @@ export default function TerminalPanel({ wsUrl, active = true }: Props) {
 
   return (
     <div
-      ref={containerRef}
+      ref={wrapperRef}
       style={{
         flex: 1,
         minHeight: 0,
         minWidth: 0,
-        padding: "4px",
+        padding: "4px 5px 4px 4px",
         background: "var(--terminal-bg)",
       }}
-    />
+    >
+      <div
+        ref={containerRef}
+        style={{ width: "100%", height: "100%", overflow: "hidden" }}
+      />
+    </div>
   );
 }

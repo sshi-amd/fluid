@@ -12,6 +12,7 @@
   display: flex;
   align-items: center;
   gap: var(--sp-2);
+  margin-top: 28px;
   margin-bottom: var(--sp-6);
 }
 

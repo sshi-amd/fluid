@@ -37,7 +37,11 @@ export default function HostTerminal() {
     function onMove(e: MouseEvent) {
       if (!dragRef.current) return;
       const delta = dragRef.current.startY - e.clientY;
-      setHeight(Math.max(MIN_HEIGHT, dragRef.current.startH + delta));
+      const tabBarHeight = panelRef.current
+        ? panelRef.current.querySelector<HTMLElement>("[data-tabbar]")?.offsetHeight ?? 40
+        : 40;
+      const maxHeight = window.innerHeight - tabBarHeight;
+      setHeight(Math.min(maxHeight, Math.max(MIN_HEIGHT, dragRef.current.startH + delta)));
     }
     function onUp() { dragRef.current = null; }
     window.addEventListener("mousemove", onMove);
@@ -76,7 +80,7 @@ export default function HostTerminal() {
       )}
 
       {/* ── Tab bar ── */}
-      <div className={styles.tabBar}>
+      <div className={styles.tabBar} data-tabbar>
         <button
           className={`${styles.toggleBtn} ${open ? styles.active : ""}`}
           onClick={() => setOpen((v) => !v)}
