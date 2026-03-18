@@ -16,6 +16,22 @@ pip install -e ".[gui]"
 
 Requires Docker to be installed and running with ROCm support (`/dev/kfd`, `/dev/dri`).
 
+### Frontend (Electron)
+
+The GUI frontend is an Electron + React app. To set up for development:
+
+```bash
+cd fluid/gui/frontend
+npm install
+npm run electron:dev
+```
+
+This starts both the Vite dev server and the Electron window. The FastAPI backend must be running separately:
+
+```bash
+fluid-gui
+```
+
 ## GUI
 
 Fluid includes a desktop application for managing containers visually. Each container gets a real interactive terminal powered by xterm.js — you can run Claude Code, a shell, or both side by side, and switch between them without losing your session.
@@ -31,24 +47,30 @@ python -m fluid --gui
 - **Container dashboard** — grid view of all your Fluid containers with live status indicators
 - **Interactive terminals** — full xterm.js terminals with ANSI color, cursor movement, and clipboard support (Ctrl+Shift+C/V)
 - **Persistent sessions** — switch between Claude and Shell tabs without killing the other session
+- **Per-session restart** — restart Shell or Claude individually without affecting the other
 - **Claude Code integration** — launch Claude Code inside any container with one click
+- **Skip permissions mode** — optionally run Claude Code with `--dangerously-skip-permissions` (configurable in Settings)
 - **Editor integration** — open Cursor/VS Code attached to a container directly from the GUI
 - **Host terminal** — resizable local terminal panel at the bottom of the window
 - **Container management** — create new containers, start/stop, remove, or add existing ones to the dashboard
-- **Settings page** — configure your Anthropic API key and GitHub token from the GUI
+- **Settings page** — configure API keys, model settings, and Claude Code behavior from the GUI
 - **Status indicators** — green (running), yellow pulsing (Claude active), red (waiting for input), gray (stopped)
 - **Live sync** — containers killed or created from the CLI are automatically reflected in the GUI
 
 ### Architecture
 
-The GUI runs as a FastAPI backend serving a web frontend inside a native pywebview window. No browser required.
+The GUI runs as a FastAPI backend with an Electron + React frontend. The backend handles Docker management and terminal sessions, while the frontend renders interactive xterm.js terminals.
 
 ```
 fluid-gui
   → FastAPI server (REST API + WebSocket terminals)
-  → pywebview native window (renders xterm.js frontend)
+  → Electron window (React + xterm.js frontend)
   → PTY bridge (real docker exec sessions via pty.openpty)
 ```
+
+### Terminal Implementation
+
+Terminals use xterm.js v6 with `requestAnimationFrame` write batching. TUI applications like Claude Code send screen redraws as fragmented ANSI escape sequences over WebSocket — the batching collects all fragments within a single animation frame and writes them to xterm.js atomically, preventing flicker.
 
 ## CLI Quick Start
 
@@ -118,6 +140,28 @@ fluid exit
 **`clean`**
 - `--force` — Also remove images still in use by existing containers
 
+## Dependencies
+
+### Python
+
+Core:
+- `typer` — CLI framework
+- `rich` — terminal output formatting
+- `docker` — Docker SDK for Python
+
+GUI (install with `pip install -e ".[gui]"`):
+- `fastapi` — REST API and WebSocket server
+- `uvicorn` — ASGI server
+- `websockets` — WebSocket protocol support
+
+### Frontend (npm)
+
+- `react` / `react-dom` — UI framework
+- `@xterm/xterm` v6 — terminal emulator
+- `@xterm/addon-fit` — auto-fit terminal to container
+- `@tanstack/react-query` — data fetching and caching
+- `electron` — native desktop window
+
 ## How It Works
 
 1. **`info`** auto-detects your GPU, driver version, and host ROCm install, then checks compatibility with the target ROCm version.
@@ -127,7 +171,7 @@ fluid exit
 5. **`claude`** starts the container if stopped and launches the Claude Code CLI inside it via `docker exec -it`.
 6. **`clean`** removes fluid-built Docker images, skipping any still in use by containers unless `--force` is passed.
 7. State is stored in `~/.fluid/state.json` to track the current container and history.
-8. API keys are stored in `~/.fluid/config.json` (permissions 600) and injected as environment variables into containers.
+8. API keys and settings are stored in `~/.fluid/config.json` (permissions 600) and injected as environment variables into containers.
 
 ## Container Environment
 
