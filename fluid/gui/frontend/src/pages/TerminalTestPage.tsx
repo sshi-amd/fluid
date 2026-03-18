@@ -3,21 +3,13 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 
-interface Props {
-  /** WebSocket URL for the PTY session. */
-  wsUrl: string;
-  /** Whether this panel is currently visible. Fit is re-run on visibility change. */
-  active?: boolean;
-}
+const WS_URL = "ws://localhost:5000/ws/terminal/fluid-rocm-examples-makefile-testing-v2?cmd=claude";
 
-export default function TerminalPanel({ wsUrl, active = true }: Props) {
+export default function TerminalTestPage() {
   const containerRef = useRef<HTMLDivElement>(null);
-  const termRef = useRef<Terminal | null>(null);
-  const fitRef = useRef<FitAddon | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
 
-  // Initialise terminal + WebSocket once on mount
   useEffect(() => {
+    const el = containerRef.current!;
     const term = new Terminal({
       theme: {
         background: "#09090b",
@@ -29,20 +21,17 @@ export default function TerminalPanel({ wsUrl, active = true }: Props) {
       fontSize: 13,
       lineHeight: 1.4,
       cursorBlink: true,
+      scrollback: 5000,
       allowProposedApi: true,
     });
 
     const fit = new FitAddon();
     term.loadAddon(fit);
-    term.open(containerRef.current!);
+    term.open(el);
     fit.fit();
-    termRef.current = term;
-    fitRef.current = fit;
 
-    // Connect WebSocket
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(WS_URL);
     ws.binaryType = "arraybuffer";
-    wsRef.current = ws;
 
     ws.onopen = () => {
       fit.fit();
@@ -75,64 +64,36 @@ export default function TerminalPanel({ wsUrl, active = true }: Props) {
       if (!rafId) rafId = requestAnimationFrame(flush);
     };
 
-    ws.onclose = () => {
-      term.writeln("\r\n\x1b[2m[session closed]\x1b[0m");
-    };
+    ws.onclose = () => term.writeln("\r\n\x1b[2m[session closed]\x1b[0m");
+    ws.onerror = () => term.writeln("\r\n\x1b[31m[connection error]\x1b[0m");
 
-    ws.onerror = () => {
-      term.writeln("\r\n\x1b[31m[connection error]\x1b[0m");
-    };
-
-    // Forward keyboard input
     term.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(data);
-      }
+      if (ws.readyState === WebSocket.OPEN) ws.send(data);
     });
-
-    // Forward binary input (e.g. paste as binary)
     term.onBinary((data) => {
       if (ws.readyState === WebSocket.OPEN) {
-        const bytes = Uint8Array.from(data, (c) => c.charCodeAt(0));
-        ws.send(bytes);
+        ws.send(Uint8Array.from(data, (c) => c.charCodeAt(0)));
       }
     });
 
+    const onResize = () => fit.fit();
+    window.addEventListener("resize", onResize);
+
     return () => {
+      window.removeEventListener("resize", onResize);
       ws.close();
       term.dispose();
-      wsRef.current = null;
-      termRef.current = null;
-      fitRef.current = null;
     };
-  }, [wsUrl]);
-
-  useEffect(() => {
-    if (active && fitRef.current && termRef.current) {
-      const id = setTimeout(() => {
-        const fit = fitRef.current;
-        const term = termRef.current;
-        const ws = wsRef.current;
-        if (!fit || !term) return;
-        fit.fit();
-        if (ws?.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
-        }
-        term.focus();
-      }, 60);
-      return () => clearTimeout(id);
-    }
-  }, [active]);
+  }, []);
 
   return (
     <div
       ref={containerRef}
       style={{
-        flex: 1,
-        minHeight: 0,
-        minWidth: 0,
+        position: "fixed",
+        inset: 0,
+        background: "#09090b",
         padding: "4px",
-        background: "var(--terminal-bg)",
       }}
     />
   );

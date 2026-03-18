@@ -633,14 +633,22 @@ async def terminal_websocket(websocket: WebSocket, name: str,
     _active_sessions[session_key] = session
 
     async def _read_pty():
-        """Forward PTY output to the WebSocket."""
+        """Forward PTY output to the WebSocket, batching rapid bursts."""
         while session.is_alive:
             try:
                 data = await session.read()
-                if data:
-                    await websocket.send_bytes(data)
-                else:
+                if not data:
                     await asyncio.sleep(0.02)
+                    continue
+
+                # Wait briefly then drain all remaining buffered data
+                # so TUI redraws arrive as a single WebSocket message.
+                await asyncio.sleep(0.016)
+                extra = session.drain()
+                if extra:
+                    data += extra
+
+                await websocket.send_bytes(data)
             except Exception:
                 break
 
@@ -758,10 +766,16 @@ async def host_terminal_websocket(websocket: WebSocket):
         while session.is_alive:
             try:
                 data = await session.read()
-                if data:
-                    await websocket.send_bytes(data)
-                else:
+                if not data:
                     await asyncio.sleep(0.02)
+                    continue
+
+                await asyncio.sleep(0.016)
+                extra = session.drain()
+                if extra:
+                    data += extra
+
+                await websocket.send_bytes(data)
             except Exception:
                 break
 
