@@ -546,6 +546,7 @@ class SettingsUpdate(BaseModel):
     amd_gateway_key: Optional[str] = None
     anthropic_base_url: Optional[str] = None
     anthropic_model: Optional[str] = None
+    claude_skip_permissions: Optional[bool] = None
 
 
 @app.get("/api/settings")
@@ -570,6 +571,7 @@ def get_settings() -> dict:
         "amd_gateway_key_set": bool(config.amd_gateway_key),
         "anthropic_base_url": config.anthropic_base_url or "",
         "anthropic_model": config.anthropic_model or "",
+        "claude_skip_permissions": config.claude_skip_permissions,
     }
 
 
@@ -589,6 +591,8 @@ def update_settings(req: SettingsUpdate) -> dict:
         config.anthropic_base_url = req.anthropic_base_url or None
     if req.anthropic_model is not None:
         config.anthropic_model = req.anthropic_model or None
+    if req.claude_skip_permissions is not None:
+        config.claude_skip_permissions = req.claude_skip_permissions
 
     save_config(config)
     return {"status": "saved"}
@@ -621,6 +625,9 @@ async def terminal_websocket(websocket: WebSocket, name: str,
 
     config = load_config()
     extra_env = config.env_vars()
+
+    if cmd == "claude" and config.claude_skip_permissions:
+        cmd = "claude --dangerously-skip-permissions"
 
     session = PtySession(name, command=cmd, extra_env=extra_env)
     try:

@@ -43,7 +43,8 @@ class PtySession:
             cmd = ["docker", "exec", "-it"]
             for key, val in self.extra_env.items():
                 cmd.extend(["-e", f"{key}={val}"])
-            cmd.extend([self.container_name, self.command])
+            cmd.append(self.container_name)
+            cmd.extend(self.command.split())
 
             os.execvp("docker", cmd)
         else:

@@ -92,6 +92,7 @@ class FluidConfig:
     amd_gateway_key: Optional[str] = None
     anthropic_base_url: Optional[str] = None
     anthropic_model: Optional[str] = None
+    claude_skip_permissions: bool = False
 
     @property
     def uses_amd_gateway(self) -> bool:
@@ -128,6 +129,7 @@ def load_config() -> FluidConfig:
             amd_gateway_key=data.get("amd_gateway_key"),
             anthropic_base_url=data.get("anthropic_base_url"),
             anthropic_model=data.get("anthropic_model"),
+            claude_skip_permissions=data.get("claude_skip_permissions", False),
         )
     except (json.JSONDecodeError, TypeError):
         return FluidConfig()

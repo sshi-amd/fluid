@@ -99,6 +99,7 @@ export interface Settings {
   amd_gateway_key_set: boolean;
   anthropic_base_url: string;
   anthropic_model: string;
+  claude_skip_permissions: boolean;
 }
 
 export interface CreateContainerRequest {

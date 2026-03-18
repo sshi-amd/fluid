@@ -12,6 +12,7 @@ export default function SettingsPage() {
     github_token: "",
     anthropic_base_url: "",
     anthropic_model: "",
+    claude_skip_permissions: false,
   });
 
   const [saved, setSaved] = useState(false);
@@ -24,18 +25,20 @@ export default function SettingsPage() {
         github_token: "",
         anthropic_base_url: settings.anthropic_base_url ?? "",
         anthropic_model: settings.anthropic_model ?? "",
+        claude_skip_permissions: settings.claude_skip_permissions ?? false,
       });
     }
   }, [settings]);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    const payload: Record<string, string> = {};
+    const payload: Record<string, string | boolean> = {};
     if (form.anthropic_api_key) payload.anthropic_api_key = form.anthropic_api_key;
     if (form.amd_gateway_key) payload.amd_gateway_key = form.amd_gateway_key;
     if (form.github_token) payload.github_token = form.github_token;
     payload.anthropic_base_url = form.anthropic_base_url;
     payload.anthropic_model = form.anthropic_model;
+    payload.claude_skip_permissions = form.claude_skip_permissions;
     await updateSettings.mutateAsync(payload);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -120,6 +123,24 @@ export default function SettingsPage() {
               onChange={(e) => setForm({ ...form, anthropic_model: e.target.value })}
             />
           </label>
+        </section>
+
+        <section className={styles.section}>
+          <h2 className={styles.sectionTitle}>Claude Code</h2>
+
+          <label className={styles.toggle}>
+            <input
+              type="checkbox"
+              checked={form.claude_skip_permissions}
+              onChange={(e) => setForm({ ...form, claude_skip_permissions: e.target.checked })}
+            />
+            <span>Skip permission prompts (--dangerously-skip-permissions)</span>
+          </label>
+          <p className={styles.hint}>
+            When enabled, Claude Code will not ask for confirmation before
+            running commands or editing files. Requires restarting the Claude
+            terminal session to take effect.
+          </p>
         </section>
 
         <div className={styles.actions}>
