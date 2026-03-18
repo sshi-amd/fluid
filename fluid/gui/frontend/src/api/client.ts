@@ -80,6 +80,22 @@ export interface ImageInfo {
   in_use: boolean;
 }
 
+export interface ArgDefinition {
+  name: string;
+  default?: string;
+  description?: string;
+}
+
+export interface DockerfileTemplate {
+  id: string;
+  name: string;
+  content?: string;
+  args: ArgDefinition[];
+  description?: string;
+  source?: string;
+  builtin?: boolean;
+}
+
 export interface AppConfig {
   default_rocm_version: string;
   default_distro: string;
@@ -88,6 +104,7 @@ export interface AppConfig {
   therock_versions: string[];
   therock_gpu_families: string[];
   therock_release_types: string[];
+  templates: DockerfileTemplate[];
 }
 
 export interface Settings {
@@ -109,4 +126,6 @@ export interface CreateContainerRequest {
   workspace?: string;
   gpu_family?: string;
   release_type?: string;
+  template_id?: string;
+  template_args?: Record<string, string>;
 }

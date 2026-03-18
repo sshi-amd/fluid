@@ -4,6 +4,7 @@ import styles from "./Header.module.css";
 const PAGE_TITLES: Record<Page, string> = {
   containers: "Containers",
   images: "Images",
+  templates: "Templates",
   settings: "Settings",
 };
 

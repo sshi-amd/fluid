@@ -7,8 +7,10 @@ import {
 import {
   api,
   type AppConfig,
+  type ArgDefinition,
   type ContainerInfo,
   type CreateContainerRequest,
+  type DockerfileTemplate,
   type ImageInfo,
   type Settings,
 } from "./client";
@@ -112,6 +114,58 @@ export function useUpdateSettings() {
   });
 }
 
+// ─── Templates ────────────────────────────────────────────────────────────────
+
+export function useTemplates(): UseQueryResult<DockerfileTemplate[]> {
+  return useQuery({
+    queryKey: ["templates"],
+    queryFn: () => api.get<DockerfileTemplate[]>("/templates"),
+  });
+}
+
+export function useTemplate(id: string | null) {
+  return useQuery({
+    queryKey: ["templates", id],
+    queryFn: () => api.get<DockerfileTemplate>(`/templates/${id}`),
+    enabled: !!id,
+  });
+}
+
+export function useImportTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: {
+      content: string;
+      name: string;
+      description?: string;
+      source?: string;
+    }) => api.post<DockerfileTemplate>("/templates", data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["templates"] });
+      qc.invalidateQueries({ queryKey: ["config"] });
+    },
+  });
+}
+
+export function useDeleteTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api.delete<{ status: string }>(`/templates/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["templates"] });
+      qc.invalidateQueries({ queryKey: ["config"] });
+    },
+  });
+}
+
+export function useParseDockerfile() {
+  return useMutation({
+    mutationFn: (data: { content: string; name: string }) =>
+      api.post<{ args: ArgDefinition[] }>("/templates/parse", data),
+  });
+}
+
 // ─── Create container (WebSocket-based, see BuildQueue component) ─────────────
 
 /** Optimistically add the new container to the cache after a WS create completes. */
@@ -121,4 +175,12 @@ export function useInvalidateContainers() {
 }
 
 // Re-export for convenience so components import from one place.
-export type { ContainerInfo, ImageInfo, AppConfig, Settings, CreateContainerRequest };
+export type {
+  ContainerInfo,
+  ImageInfo,
+  AppConfig,
+  Settings,
+  CreateContainerRequest,
+  DockerfileTemplate,
+  ArgDefinition,
+};
