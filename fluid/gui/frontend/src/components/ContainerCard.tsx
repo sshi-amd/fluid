@@ -39,7 +39,7 @@ export default function ContainerCard({ container }: Props) {
       : "created";
 
   return (
-    <div className={styles.card}>
+    <div className={`${styles.card} ${terminalOpen && isRunning ? styles.cardWithTerminal : ""}`}>
       {/* ── Card header ── */}
       <div className={styles.header}>
         <div className={styles.nameRow}>

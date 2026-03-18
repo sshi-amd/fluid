@@ -98,7 +98,18 @@ export default function TerminalPanel({ wsUrl, active = true }: Props) {
       }
     });
 
+    const ro = new ResizeObserver(() => {
+      const el = containerRef.current;
+      if (!el || el.offsetWidth === 0 || el.offsetHeight === 0) return;
+      fit.fit();
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+      }
+    });
+    ro.observe(containerRef.current!);
+
     return () => {
+      ro.disconnect();
       ws.close();
       term.dispose();
       wsRef.current = null;

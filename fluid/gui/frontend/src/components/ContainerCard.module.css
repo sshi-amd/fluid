@@ -6,8 +6,10 @@
   flex-direction: column;
   overflow: hidden;
   transition: border-color 0.15s;
-  min-width: 0;
-  min-height: 600px;
+}
+
+.cardWithTerminal {
+  height: 560px;
 }
 
 .card:hover {
@@ -19,7 +21,6 @@
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
-  flex-shrink: 0;
 }
 
 .nameRow {
@@ -59,7 +60,7 @@
   display: flex;
   flex-direction: column;
   flex: 1;
-  min-height: 200px;
+  min-height: 0;
   min-width: 0;
   border-top: 1px solid var(--border);
   background: var(--terminal-bg);
