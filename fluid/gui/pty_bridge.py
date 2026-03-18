@@ -43,7 +43,8 @@ class PtySession:
             cmd = ["docker", "exec", "-it"]
             for key, val in self.extra_env.items():
                 cmd.extend(["-e", f"{key}={val}"])
-            cmd.extend([self.container_name, self.command])
+            cmd.append(self.container_name)
+            cmd.extend(self.command.split())
 
             os.execvp("docker", cmd)
         else:
@@ -82,9 +83,25 @@ class PtySession:
         if self._master_fd is None:
             return b""
         try:
-            return os.read(self._master_fd, 4096)
+            return os.read(self._master_fd, 65536)
         except OSError:
             return b""
+
+    def drain(self) -> bytes:
+        """Read all immediately available data from the PTY without blocking."""
+        if self._master_fd is None or self._closed:
+            return b""
+        chunks = []
+        while True:
+            try:
+                data = os.read(self._master_fd, 65536)
+                if data:
+                    chunks.append(data)
+                else:
+                    break
+            except (BlockingIOError, OSError):
+                break
+        return b"".join(chunks)
 
     def close(self) -> None:
         if self._closed:

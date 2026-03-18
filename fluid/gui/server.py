@@ -22,6 +22,7 @@ logger = logging.getLogger("fluid.gui")
 STATIC_DIR = Path(__file__).parent / "static"
 
 _active_sessions: dict[str, PtySession] = {}
+_build_queue: list[CreateContainerRequest] = []
 
 
 @asynccontextmanager
@@ -52,6 +53,12 @@ class ContainerInfo(BaseModel):
     status: str
     rocm_version: str
     workspace: str
+
+class QueueItem(BaseModel):
+    type : str
+    name : str
+
+
 
 
 # --- REST endpoints ---
@@ -539,6 +546,7 @@ class SettingsUpdate(BaseModel):
     amd_gateway_key: Optional[str] = None
     anthropic_base_url: Optional[str] = None
     anthropic_model: Optional[str] = None
+    claude_skip_permissions: Optional[bool] = None
 
 
 @app.get("/api/settings")
@@ -563,6 +571,7 @@ def get_settings() -> dict:
         "amd_gateway_key_set": bool(config.amd_gateway_key),
         "anthropic_base_url": config.anthropic_base_url or "",
         "anthropic_model": config.anthropic_model or "",
+        "claude_skip_permissions": config.claude_skip_permissions,
     }
 
 
@@ -582,6 +591,8 @@ def update_settings(req: SettingsUpdate) -> dict:
         config.anthropic_base_url = req.anthropic_base_url or None
     if req.anthropic_model is not None:
         config.anthropic_model = req.anthropic_model or None
+    if req.claude_skip_permissions is not None:
+        config.claude_skip_permissions = req.claude_skip_permissions
 
     save_config(config)
     return {"status": "saved"}
@@ -615,6 +626,9 @@ async def terminal_websocket(websocket: WebSocket, name: str,
     config = load_config()
     extra_env = config.env_vars()
 
+    if cmd == "claude" and config.claude_skip_permissions:
+        cmd = "claude --dangerously-skip-permissions"
+
     session = PtySession(name, command=cmd, extra_env=extra_env)
     try:
         session.spawn(cols=120, rows=30)
@@ -626,14 +640,22 @@ async def terminal_websocket(websocket: WebSocket, name: str,
     _active_sessions[session_key] = session
 
     async def _read_pty():
-        """Forward PTY output to the WebSocket."""
+        """Forward PTY output to the WebSocket, batching rapid bursts."""
         while session.is_alive:
             try:
                 data = await session.read()
-                if data:
-                    await websocket.send_bytes(data)
-                else:
+                if not data:
                     await asyncio.sleep(0.02)
+                    continue
+
+                # Wait briefly then drain all remaining buffered data
+                # so TUI redraws arrive as a single WebSocket message.
+                await asyncio.sleep(0.016)
+                extra = session.drain()
+                if extra:
+                    data += extra
+
+                await websocket.send_bytes(data)
             except Exception:
                 break
 
@@ -642,6 +664,8 @@ async def terminal_websocket(websocket: WebSocket, name: str,
     try:
         while True:
             msg = await websocket.receive()
+            if not isinstance(msg, dict):
+                break
             if msg.get("type") == "websocket.disconnect":
                 break
 
@@ -651,7 +675,7 @@ async def terminal_websocket(websocket: WebSocket, name: str,
                 text = msg["text"]
                 try:
                     parsed = json.loads(text)
-                    if parsed.get("type") == "resize":
+                    if isinstance(parsed, dict) and parsed.get("type") == "resize":
                         session.resize(parsed.get("cols", 120),
                                        parsed.get("rows", 30))
                         continue
@@ -749,10 +773,16 @@ async def host_terminal_websocket(websocket: WebSocket):
         while session.is_alive:
             try:
                 data = await session.read()
-                if data:
-                    await websocket.send_bytes(data)
-                else:
+                if not data:
                     await asyncio.sleep(0.02)
+                    continue
+
+                await asyncio.sleep(0.016)
+                extra = session.drain()
+                if extra:
+                    data += extra
+
+                await websocket.send_bytes(data)
             except Exception:
                 break
 
@@ -761,6 +791,8 @@ async def host_terminal_websocket(websocket: WebSocket):
     try:
         while True:
             msg = await websocket.receive()
+            if not isinstance(msg, dict):
+                break
             if msg.get("type") == "websocket.disconnect":
                 break
 
@@ -770,7 +802,7 @@ async def host_terminal_websocket(websocket: WebSocket):
                 text = msg["text"]
                 try:
                     parsed = json.loads(text)
-                    if parsed.get("type") == "resize":
+                    if isinstance(parsed, dict) and parsed.get("type") == "resize":
                         session.resize(parsed.get("cols", 120),
                                        parsed.get("rows", 10))
                         continue
@@ -806,35 +838,7 @@ def serve_spa(path: str = ""):
 
 
 def run(host: str = "127.0.0.1", port: int = 5000) -> None:
-    """Start the Fluid GUI as a native desktop window."""
-    import threading
-
+    """Start the Fluid backend server (Electron spawns this as a child process)."""
     import uvicorn
-    import webview
 
-    server_started = threading.Event()
-
-    class _Server(uvicorn.Server):
-        def startup(self, sockets=None):
-            result = super().startup(sockets)
-            server_started.set()
-            return result
-
-    def _run_server():
-        config = uvicorn.Config(app, host=host, port=port, log_level="warning")
-        server = _Server(config)
-        server.run()
-
-    server_thread = threading.Thread(target=_run_server, daemon=True)
-    server_thread.start()
-    server_started.wait(timeout=10)
-
-    window = webview.create_window(
-        "Fluid",
-        url=f"http://{host}:{port}",
-        width=1300,
-        height=850,
-        min_size=(900, 600),
-        background_color="#0e0e10",
-    )
-    webview.start()
+    uvicorn.run(app, host=host, port=port, log_level="warning")

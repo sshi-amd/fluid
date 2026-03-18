@@ -17,7 +17,7 @@ setup(
             "fastapi>=0.110.0",
             "uvicorn[standard]>=0.27.0",
             "websockets>=12.0",
-            "pywebview>=5.0",
+            "pydantic>=2.0.0",
         ],
     },
     entry_points={
