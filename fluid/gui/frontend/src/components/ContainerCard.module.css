@@ -92,6 +92,19 @@
   background: var(--surface);
 }
 
+.restartBtn {
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-dim);
+  transition: background 0.12s, color 0.12s;
+}
+
+.restartBtn:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+
 .terminalWrap {
   flex: 1;
   min-height: 0;

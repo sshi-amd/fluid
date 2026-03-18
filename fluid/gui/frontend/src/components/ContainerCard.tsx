@@ -19,6 +19,8 @@ type SessionTab = "bash" | "claude";
 export default function ContainerCard({ container }: Props) {
   const [activeTab, setActiveTab] = useState<SessionTab>("bash");
   const [terminalOpen, setTerminalOpen] = useState(false);
+  const [bashKey, setBashKey] = useState(0);
+  const [claudeKey, setClaudeKey] = useState(0);
 
   const start = useStartContainer();
   const stop = useStopContainer();
@@ -67,23 +69,43 @@ export default function ContainerCard({ container }: Props) {
             >
               Shell
             </button>
+            {activeTab === "bash" && (
+              <button
+                className={styles.restartBtn}
+                onClick={() => setBashKey((k) => k + 1)}
+                title="Restart shell session"
+              >
+                ↻
+              </button>
+            )}
             <button
               className={`${styles.tab} ${activeTab === "claude" ? styles.activeTab : ""}`}
               onClick={() => setActiveTab("claude")}
             >
               Claude
             </button>
+            {activeTab === "claude" && (
+              <button
+                className={styles.restartBtn}
+                onClick={() => setClaudeKey((k) => k + 1)}
+                title="Restart Claude session"
+              >
+                ↻
+              </button>
+            )}
           </div>
           <div className={styles.terminalWrap}>
             {/* Keep both panels mounted but show only the active one so sessions persist */}
             <div style={{ display: activeTab === "bash" ? "flex" : "none", flex: 1, minHeight: 0, minWidth: 0 }}>
               <TerminalPanel
+                key={`bash-${bashKey}`}
                 wsUrl={terminalWsUrl("/bin/bash")}
                 active={activeTab === "bash"}
               />
             </div>
             <div style={{ display: activeTab === "claude" ? "flex" : "none", flex: 1, minHeight: 0, minWidth: 0 }}>
               <TerminalPanel
+                key={`claude-${claudeKey}`}
                 wsUrl={terminalWsUrl("claude")}
                 active={activeTab === "claude"}
               />
