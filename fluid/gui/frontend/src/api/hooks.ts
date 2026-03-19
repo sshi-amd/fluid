@@ -73,7 +73,10 @@ export function useRemoveImage() {
   return useMutation({
     mutationFn: ({ id, force = false }: { id: string; force?: boolean }) =>
       api.delete<{ status: string }>(`/images/${encodeURIComponent(id)}?force=${force}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["images"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["images"] });
+      qc.invalidateQueries({ queryKey: ["containers"] });
+    },
   });
 }
 

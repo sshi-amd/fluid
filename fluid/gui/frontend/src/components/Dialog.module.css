@@ -51,36 +51,6 @@
   background: var(--surface-raised);
 }
 
-/* ── Mode tabs (Standard / From Template) ── */
-
-.modeTabs {
-  display: flex;
-  gap: 2px;
-  padding: var(--sp-2) var(--sp-5);
-  background: var(--surface-raised);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.modeTab {
-  padding: 6px 14px;
-  border-radius: var(--radius-sm);
-  font-size: var(--font-size-sm);
-  color: var(--text-dim);
-  transition: background 0.12s, color 0.12s;
-}
-
-.modeTab:hover {
-  color: var(--text);
-  background: var(--surface);
-}
-
-.modeTabActive {
-  color: var(--text);
-  background: var(--surface);
-  font-weight: 500;
-}
-
 /* ── Form ── */
 
 .form {

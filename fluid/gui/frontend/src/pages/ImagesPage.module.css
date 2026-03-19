@@ -13,6 +13,16 @@
   flex-shrink: 0;
 }
 
+.error {
+  margin: var(--sp-3) var(--sp-5) 0;
+  padding: var(--sp-2) var(--sp-4);
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--red) 30%, transparent);
+  border-radius: var(--radius-md);
+  color: var(--red);
+  font-size: var(--font-size-sm);
+}
+
 .status {
   padding: var(--sp-4) var(--sp-5);
   color: var(--text-dim);
@@ -55,6 +65,11 @@
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);
   color: var(--text-dim);
+}
+
+.actions {
+  display: flex;
+  gap: var(--sp-2);
 }
 
 .empty {
