@@ -3,10 +3,11 @@ import Sidebar from "./components/Sidebar";
 import Header from "./components/Header";
 import ContainersPage from "./pages/ContainersPage";
 import ImagesPage from "./pages/ImagesPage";
+import TemplatesPage from "./pages/TemplatesPage";
 import SettingsPage from "./pages/SettingsPage";
 import styles from "./App.module.css";
 
-export type Page = "containers" | "images" | "settings";
+export type Page = "containers" | "images" | "templates" | "settings";
 
 export default function App() {
   const [page, setPage] = useState<Page>("containers");
@@ -19,6 +20,7 @@ export default function App() {
         <div className={styles.content}>
           {page === "containers" && <ContainersPage />}
           {page === "images" && <ImagesPage />}
+          {page === "templates" && <TemplatesPage />}
           {page === "settings" && <SettingsPage />}
         </div>
       </div>

@@ -45,6 +45,8 @@ class CreateContainerRequest(BaseModel):
     workspace: Optional[str] = None
     gpu_family: Optional[str] = None
     release_type: str = "nightlies"
+    template_id: Optional[str] = None
+    template_args: Optional[dict[str, str]] = None
 
 
 class ContainerInfo(BaseModel):
@@ -139,6 +141,8 @@ async def create_container_ws(websocket: WebSocket):
     workspace = msg.get("workspace")
     gpu_family = msg.get("gpu_family", "")
     release_type = msg.get("release_type", "nightlies")
+    template_id = msg.get("template_id")
+    template_args = msg.get("template_args", {})
 
     from fluid.config import make_container_name
     container_name = make_container_name(req_name, rocm_version)
@@ -183,10 +187,27 @@ async def create_container_ws(websocket: WebSocket):
         try:
             client = docker.from_env()
 
-            tag_suffix = f"{distro}-{rocm_version}"
-            if gpu_family:
-                tag_suffix += f"-{gpu_family}"
-            image_tag = f"{IMAGE_PREFIX}:{tag_suffix}"
+            custom_template = None
+            if template_id:
+                from fluid.templates import load_template
+                custom_template = load_template(template_id)
+                if not custom_template:
+                    emit({"type": "error",
+                          "message": f"Template {template_id} not found"})
+                    emit({"type": "_done"})
+                    return
+
+            if custom_template:
+                from fluid.templates import make_image_tag
+                image_tag = make_image_tag(
+                    custom_template, template_args or {},
+                    prefix=IMAGE_PREFIX)
+            else:
+                tag_suffix = f"{distro}-{rocm_version}"
+                if gpu_family:
+                    tag_suffix += f"-{gpu_family}"
+                image_tag = f"{IMAGE_PREFIX}:{tag_suffix}"
+
             try:
                 client.images.get(image_tag)
                 log(f"Using existing image {image_tag}\n")
@@ -194,10 +215,22 @@ async def create_container_ws(websocket: WebSocket):
                 log(f"Building image {image_tag}...\n")
                 emit({"type": "phase", "phase": "building_image"})
 
-                dockerfile_content = generate_dockerfile(
-                    rocm_version, distro=distro,
-                    gpu_family=gpu_family,
-                    release_type=release_type)
+                if custom_template:
+                    from fluid.templates import generate_from_template
+                    dockerfile_content = generate_from_template(
+                        custom_template, template_args or {})
+                else:
+                    dockerfile_content = generate_dockerfile(
+                        rocm_version, distro=distro,
+                        gpu_family=gpu_family,
+                        release_type=release_type)
+
+                buildargs = None
+                if custom_template and template_args:
+                    buildargs = {k: v for k, v in template_args.items() if v}
+                    if buildargs:
+                        log(f"Build args: {buildargs}\n")
+
                 try:
                     stream = client.api.build(
                         fileobj=io.BytesIO(dockerfile_content.encode()),
@@ -205,6 +238,8 @@ async def create_container_ws(websocket: WebSocket):
                         rm=True,
                         forcerm=True,
                         decode=True,
+                        buildargs=buildargs,
+                        labels={LABEL_MANAGED: "true"},
                     )
                     build_error = None
                     for chunk in stream:
@@ -432,6 +467,7 @@ async def remove_container(name: str) -> dict:
 def get_config() -> dict:
     from fluid.config import DEFAULT_DISTRO, DEFAULT_ROCM_VERSION, SUPPORTED_DISTROS
     from fluid.dockerfile import THEROCK_GPU_FAMILIES, THEROCK_RELEASE_TYPES
+    from fluid.templates import list_templates
 
     return {
         "default_rocm_version": DEFAULT_ROCM_VERSION,
@@ -449,6 +485,7 @@ def get_config() -> dict:
         ],
         "therock_gpu_families": THEROCK_GPU_FAMILIES,
         "therock_release_types": THEROCK_RELEASE_TYPES,
+        "templates": [t.to_dict() for t in list_templates()],
     }
 
 
@@ -489,18 +526,29 @@ def list_images() -> list[dict]:
 @app.delete("/api/images/{image_id:path}")
 async def remove_image(image_id: str, force: bool = False) -> dict:
     import docker
+    from fastapi.responses import JSONResponse
 
     try:
         client = docker.from_env()
     except Exception:
-        return {"error": "Cannot connect to Docker"}
+        return JSONResponse(
+            status_code=503,
+            content={"error": "Cannot connect to Docker"})
+
+    def _do_remove():
+        if force:
+            from fluid.docker_manager import force_remove_image
+            force_remove_image(client, image_id)
+        else:
+            client.images.remove(image_id, force=False)
 
     loop = asyncio.get_event_loop()
     try:
-        await loop.run_in_executor(
-            None, lambda: client.images.remove(image_id, force=force))
+        await loop.run_in_executor(None, _do_remove)
     except Exception as e:
-        return {"error": str(e)}
+        return JSONResponse(
+            status_code=409,
+            content={"error": str(e)})
 
     return {"status": "removed", "id": image_id}
 
@@ -821,6 +869,88 @@ async def host_terminal_websocket(websocket: WebSocket):
             pass
         session.close()
         _active_sessions.pop(session_key, None)
+
+
+# --- Template endpoints ---
+
+class ImportTemplateRequest(BaseModel):
+    content: str
+    name: str
+    description: Optional[str] = None
+    source: Optional[str] = None
+
+
+class UpdateTemplateRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    content: Optional[str] = None
+
+
+@app.get("/api/templates")
+def get_templates() -> list[dict]:
+    from fluid.templates import list_templates
+    return [t.to_dict() for t in list_templates()]
+
+
+@app.get("/api/templates/{template_id}")
+def get_template(template_id: str) -> dict:
+    from fluid.templates import load_template
+    t = load_template(template_id)
+    if not t:
+        return {"error": "Template not found"}
+    return t.to_dict()
+
+
+@app.post("/api/templates")
+def import_template(req: ImportTemplateRequest) -> dict:
+    from fluid.templates import import_dockerfile
+    t = import_dockerfile(
+        content=req.content,
+        name=req.name,
+        description=req.description,
+        source=req.source,
+    )
+    return t.to_dict()
+
+
+@app.put("/api/templates/{template_id}")
+def update_template(template_id: str, req: UpdateTemplateRequest) -> dict:
+    from fluid.templates import (
+        load_template,
+        parse_dockerfile_args,
+        save_template,
+    )
+
+    t = load_template(template_id)
+    if not t:
+        return {"error": "Template not found"}
+
+    if req.name is not None:
+        t.name = req.name
+    if req.description is not None:
+        t.description = req.description
+    if req.content is not None:
+        t.content = req.content
+        t.args = parse_dockerfile_args(req.content)
+
+    save_template(t)
+    return t.to_dict()
+
+
+@app.delete("/api/templates/{template_id}")
+def remove_template(template_id: str) -> dict:
+    from fluid.templates import delete_template
+    if delete_template(template_id):
+        return {"status": "deleted"}
+    return {"error": "Template not found"}
+
+
+@app.post("/api/templates/parse")
+def parse_template(req: ImportTemplateRequest) -> dict:
+    """Parse a Dockerfile and return its ARGs without saving."""
+    from fluid.templates import parse_dockerfile_args
+    args = parse_dockerfile_args(req.content)
+    return {"args": [a.to_dict() for a in args]}
 
 
 # --- Static file serving ---

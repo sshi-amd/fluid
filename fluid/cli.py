@@ -203,16 +203,22 @@ def kill(
 
 @app.command()
 def clean(
+    name: Optional[str] = typer.Option(
+        None,
+        "-n",
+        "--name",
+        help="Specific image name or tag to remove (e.g. fluid:ubuntu-22.04-6.3).",
+    ),
     force: bool = typer.Option(
         False,
         "--force",
-        help="Also remove images still in use by containers.",
+        help="Force removal — stops containers using the image first.",
     ),
 ) -> None:
     """Remove Docker images built by fluid."""
     from fluid.docker_manager import remove_images
 
-    remove_images(force=force)
+    remove_images(force=force, name=name)
 
 
 def _mask(value: str) -> str:

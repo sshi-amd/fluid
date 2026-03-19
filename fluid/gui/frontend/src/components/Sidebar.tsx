@@ -9,6 +9,7 @@ interface Props {
 const NAV_ITEMS: { id: Page; label: string; icon: string }[] = [
   { id: "containers", label: "Containers", icon: "⬡" },
   { id: "images", label: "Images", icon: "◫" },
+  { id: "templates", label: "Templates", icon: "⎔" },
   { id: "settings", label: "Settings", icon: "⚙" },
 ];
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useConfig } from "../api/hooks";
+import { useConfig, type DockerfileTemplate } from "../api/hooks";
 import { submitCreate } from "./BuildQueue";
 import styles from "./Dialog.module.css";
 
@@ -8,18 +8,15 @@ interface Props {
 }
 
 export default function Dialog({ onClose }: Props) {
-  const { data: config } = useConfig();
-  const [form, setForm] = useState({
-    name: "",
-    rocm_version: "",
-    distro: "",
-    workspace: "",
-    gpu_family: "",
-    release_type: "nightlies",
-  });
+  const { data: config, isLoading } = useConfig();
+  const templates = config?.templates ?? [];
+  const [form, setForm] = useState({ name: "", workspace: "" });
+  const [selectedTemplate, setSelectedTemplate] =
+    useState<DockerfileTemplate | null>(null);
+  const [templateArgs, setTemplateArgs] = useState<Record<string, string>>({});
   const backdropRef = useRef<HTMLDivElement>(null);
+  const didInit = useRef(false);
 
-  // Close on Escape
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
@@ -28,17 +25,23 @@ export default function Dialog({ onClose }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  // Populate defaults from config
   useEffect(() => {
-    if (config) {
-      setForm((f) => ({
-        ...f,
-        rocm_version: f.rocm_version || config.default_rocm_version,
-        distro: f.distro || config.default_distro,
-        gpu_family: f.gpu_family || config.therock_gpu_families?.[0] || "",
-      }));
+    if (!config || didInit.current) return;
+    didInit.current = true;
+
+    if (config.templates.length > 0) {
+      selectTemplate(config.templates[0]);
     }
   }, [config]);
+
+  function selectTemplate(template: DockerfileTemplate) {
+    setSelectedTemplate(template);
+    const defaults: Record<string, string> = {};
+    for (const arg of template.args) {
+      defaults[arg.name] = arg.default ?? "";
+    }
+    setTemplateArgs(defaults);
+  }
 
   function handleBackdrop(e: React.MouseEvent) {
     if (e.target === backdropRef.current) onClose();
@@ -46,25 +49,42 @@ export default function Dialog({ onClose }: Props) {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!selectedTemplate) return;
     submitCreate({
       name: form.name || undefined,
-      rocm_version: form.rocm_version,
-      distro: form.distro,
       workspace: form.workspace || undefined,
-      gpu_family: form.gpu_family || undefined,
-      release_type: form.release_type,
+      template_id: selectedTemplate.id,
+      template_args: templateArgs,
     });
     onClose();
   }
 
-  const isTheRock = form.distro?.startsWith("therock");
+  if (isLoading || !config) {
+    return (
+      <div className={styles.backdrop} ref={backdropRef} onClick={handleBackdrop}>
+        <div className={styles.dialog} role="dialog" aria-modal>
+          <div className={styles.header}>
+            <h2 className={styles.title}>New Container</h2>
+            <button className={styles.closeBtn} onClick={onClose}>✕</button>
+          </div>
+          <div className={styles.form} style={{ color: "var(--text-dim)" }}>Loading…</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={styles.backdrop} ref={backdropRef} onClick={handleBackdrop}>
-      <div className={styles.dialog} role="dialog" aria-modal>
+      <div
+        className={`${styles.dialog} ${selectedTemplate ? styles.dialogWide : ""}`}
+        role="dialog"
+        aria-modal
+      >
         <div className={styles.header}>
           <h2 className={styles.title}>New Container</h2>
-          <button className={styles.closeBtn} onClick={onClose}>✕</button>
+          <button className={styles.closeBtn} onClick={onClose}>
+            ✕
+          </button>
         </div>
 
         <form className={styles.form} onSubmit={handleSubmit}>
@@ -79,67 +99,68 @@ export default function Dialog({ onClose }: Props) {
           </label>
 
           <label className={styles.field}>
-            <span className={styles.label}>Distro</span>
+            <span className={styles.label}>Template</span>
             <select
-              value={form.distro}
-              onChange={(e) => setForm({ ...form, distro: e.target.value })}
+              value={selectedTemplate?.id ?? ""}
+              onChange={(e) => {
+                const t = templates.find((t) => t.id === e.target.value);
+                if (t) selectTemplate(t);
+              }}
             >
-              {(config?.distros ?? []).map((d) => (
-                <option key={d} value={d}>{d}</option>
+              <option value="" disabled>
+                Select a template…
+              </option>
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                  {t.description ? ` — ${t.description}` : ""}
+                </option>
               ))}
             </select>
           </label>
 
-          {isTheRock ? (
-            <>
-              <label className={styles.field}>
-                <span className={styles.label}>TheRock Version</span>
-                <select
-                  value={form.rocm_version}
-                  onChange={(e) => setForm({ ...form, rocm_version: e.target.value })}
-                >
-                  {(config?.therock_versions ?? []).map((v) => (
-                    <option key={v} value={v}>{v}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label className={styles.field}>
-                <span className={styles.label}>GPU Family</span>
-                <select
-                  value={form.gpu_family}
-                  onChange={(e) => setForm({ ...form, gpu_family: e.target.value })}
-                >
-                  {(config?.therock_gpu_families ?? []).map((f) => (
-                    <option key={f} value={f}>{f}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label className={styles.field}>
-                <span className={styles.label}>Release Type</span>
-                <select
-                  value={form.release_type}
-                  onChange={(e) => setForm({ ...form, release_type: e.target.value })}
-                >
-                  {(config?.therock_release_types ?? []).map((t) => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
-                </select>
-              </label>
-            </>
-          ) : (
-            <label className={styles.field}>
-              <span className={styles.label}>ROCm Version</span>
-              <select
-                value={form.rocm_version}
-                onChange={(e) => setForm({ ...form, rocm_version: e.target.value })}
-              >
-                {(config?.rocm_versions ?? []).map((v) => (
-                  <option key={v} value={v}>{v}</option>
+          {selectedTemplate && selectedTemplate.args.length > 0 && (
+            <div className={styles.argsForm}>
+              <div className={styles.argsFormHeader}>
+                <span className={styles.argsFormTitle}>Build Inputs</span>
+                <span className={styles.argsFormCount}>
+                  {selectedTemplate.args.length} configurable{" "}
+                  {selectedTemplate.args.length === 1 ? "value" : "values"}
+                </span>
+              </div>
+              <div className={styles.argsFormList}>
+                {selectedTemplate.args.map((arg) => (
+                  <label key={arg.name} className={styles.argField}>
+                    <div className={styles.argFieldHeader}>
+                      <span className={styles.argFieldName}>{arg.name}</span>
+                      {!arg.default && (
+                        <span className={styles.argFieldRequired}>required</span>
+                      )}
+                    </div>
+                    {arg.description && (
+                      <span className={styles.argFieldDesc}>{arg.description}</span>
+                    )}
+                    <input
+                      type="text"
+                      placeholder={arg.default || `Enter ${arg.name}`}
+                      value={templateArgs[arg.name] ?? ""}
+                      onChange={(e) =>
+                        setTemplateArgs((prev) => ({
+                          ...prev,
+                          [arg.name]: e.target.value,
+                        }))
+                      }
+                    />
+                  </label>
                 ))}
-              </select>
-            </label>
+              </div>
+            </div>
+          )}
+
+          {selectedTemplate && selectedTemplate.args.length === 0 && (
+            <div className={styles.noArgsMsg}>
+              This template has no configurable ARGs. It will be built as-is.
+            </div>
           )}
 
           <label className={styles.field}>
@@ -156,7 +177,11 @@ export default function Dialog({ onClose }: Props) {
             <button type="button" className="btn btn-ghost" onClick={onClose}>
               Cancel
             </button>
-            <button type="submit" className="btn btn-primary">
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={!selectedTemplate}
+            >
               Create
             </button>
           </div>
