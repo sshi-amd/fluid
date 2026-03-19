@@ -3,6 +3,8 @@ import {
   useTemplates,
   useImportTemplate,
   useDeleteTemplate,
+  useUpdateTemplate,
+  useTemplate,
   useParseDockerfile,
   type DockerfileTemplate,
   type ArgDefinition,
@@ -13,6 +15,7 @@ export default function TemplatesPage() {
   const { data: templates = [], isLoading } = useTemplates();
   const deleteTemplate = useDeleteTemplate();
   const [showImport, setShowImport] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   return (
     <div className={styles.page}>
@@ -30,6 +33,7 @@ export default function TemplatesPage() {
           <TemplateCard
             key={t.id}
             template={t}
+            onEdit={() => setEditingId(t.id)}
             onDelete={() => {
               if (confirm(`Delete template "${t.name}"?`)) {
                 deleteTemplate.mutate(t.id);
@@ -56,15 +60,23 @@ export default function TemplatesPage() {
       </div>
 
       {showImport && <ImportDialog onClose={() => setShowImport(false)} />}
+      {editingId && (
+        <EditDialog
+          templateId={editingId}
+          onClose={() => setEditingId(null)}
+        />
+      )}
     </div>
   );
 }
 
 function TemplateCard({
   template,
+  onEdit,
   onDelete,
 }: {
   template: DockerfileTemplate;
+  onEdit: () => void;
   onDelete: () => void;
 }) {
   return (
@@ -109,6 +121,9 @@ function TemplateCard({
 
       {!template.builtin && (
         <div className={styles.cardFooter}>
+          <button className={styles.cardBtn} onClick={onEdit}>
+            Edit
+          </button>
           <button
             className={`${styles.cardBtn} ${styles.danger}`}
             onClick={onDelete}
@@ -117,6 +132,186 @@ function TemplateCard({
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+function EditDialog({
+  templateId,
+  onClose,
+}: {
+  templateId: string;
+  onClose: () => void;
+}) {
+  const { data: template, isLoading } = useTemplate(templateId);
+  const updateTemplate = useUpdateTemplate();
+  const parseDockerfile = useParseDockerfile();
+  const backdropRef = useRef<HTMLDivElement>(null);
+
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [content, setContent] = useState("");
+  const [parsedArgs, setParsedArgs] = useState<ArgDefinition[]>([]);
+  const didInit = useRef(false);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  useEffect(() => {
+    if (template && !didInit.current) {
+      didInit.current = true;
+      setName(template.name);
+      setDescription(template.description ?? "");
+      setContent(template.content ?? "");
+      setParsedArgs(template.args);
+    }
+  }, [template]);
+
+  const doParse = useCallback(
+    (dockerfileContent: string) => {
+      if (!dockerfileContent.trim()) {
+        setParsedArgs([]);
+        return;
+      }
+      parseDockerfile.mutate(
+        { content: dockerfileContent, name: "preview" },
+        { onSuccess: (data) => setParsedArgs(data.args) }
+      );
+    },
+    [parseDockerfile]
+  );
+
+  const parseTimer = useRef<ReturnType<typeof setTimeout>>();
+  function handleContentChange(value: string) {
+    setContent(value);
+    clearTimeout(parseTimer.current);
+    parseTimer.current = setTimeout(() => doParse(value), 500);
+  }
+
+  function handleBackdrop(e: React.MouseEvent) {
+    if (e.target === backdropRef.current) onClose();
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!content.trim() || !name.trim()) return;
+    await updateTemplate.mutateAsync({
+      id: templateId,
+      name,
+      description: description || undefined,
+      content,
+    });
+    onClose();
+  }
+
+  if (isLoading || !template) {
+    return (
+      <div className={styles.importBackdrop} ref={backdropRef} onClick={handleBackdrop}>
+        <div className={styles.importDialog} role="dialog" aria-modal>
+          <div className={styles.importHeader}>
+            <h2 className={styles.importTitle}>Edit Template</h2>
+            <button className={styles.closeBtn} onClick={onClose}>✕</button>
+          </div>
+          <div className={styles.importBody} style={{ color: "var(--text-dim)" }}>
+            Loading…
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={styles.importBackdrop}
+      ref={backdropRef}
+      onClick={handleBackdrop}
+    >
+      <div className={styles.importDialog} role="dialog" aria-modal>
+        <div className={styles.importHeader}>
+          <h2 className={styles.importTitle}>Edit Template</h2>
+          <button className={styles.closeBtn} onClick={onClose}>
+            ✕
+          </button>
+        </div>
+
+        <form className={styles.importBody} onSubmit={handleSubmit}>
+          <label className={styles.field}>
+            <span className={styles.label}>Template Name</span>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+            />
+          </label>
+
+          <label className={styles.field}>
+            <span className={styles.label}>Description (optional)</span>
+            <input
+              type="text"
+              placeholder="What this template builds"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </label>
+
+          <label className={styles.field}>
+            <span className={styles.label}>Dockerfile content</span>
+            <textarea
+              className={styles.dockerfileInput}
+              value={content}
+              onChange={(e) => handleContentChange(e.target.value)}
+              spellCheck={false}
+              required
+            />
+          </label>
+
+          {parsedArgs.length > 0 && (
+            <div className={styles.previewSection}>
+              <div className={styles.previewTitle}>
+                Detected Inputs ({parsedArgs.length})
+              </div>
+              <div className={styles.previewArgList}>
+                {parsedArgs.map((arg) => (
+                  <div key={arg.name} className={styles.previewArg}>
+                    <span className={styles.previewArgName}>{arg.name}</span>
+                    <span className={styles.previewArgMeta}>
+                      {arg.default ? `default: ${arg.default}` : "required"}
+                      {arg.description ? ` — ${arg.description}` : ""}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className={styles.importActions}>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={onClose}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={
+                !content.trim() ||
+                !name.trim() ||
+                updateTemplate.isPending
+              }
+            >
+              {updateTemplate.isPending ? "Saving…" : "Save Changes"}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

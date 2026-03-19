@@ -198,14 +198,10 @@ async def create_container_ws(websocket: WebSocket):
                     return
 
             if custom_template:
-                tag_suffix = f"custom-{custom_template.id[:8]}"
-                if template_args:
-                    import hashlib
-                    args_hash = hashlib.sha256(
-                        json.dumps(template_args, sort_keys=True).encode()
-                    ).hexdigest()[:8]
-                    tag_suffix += f"-{args_hash}"
-                image_tag = f"{IMAGE_PREFIX}:{tag_suffix}"
+                from fluid.templates import make_image_tag
+                image_tag = make_image_tag(
+                    custom_template, template_args or {},
+                    prefix=IMAGE_PREFIX)
             else:
                 tag_suffix = f"{distro}-{rocm_version}"
                 if gpu_family:
@@ -231,7 +227,9 @@ async def create_container_ws(websocket: WebSocket):
 
                 buildargs = None
                 if custom_template and template_args:
-                    buildargs = template_args
+                    buildargs = {k: v for k, v in template_args.items() if v}
+                    if buildargs:
+                        log(f"Build args: {buildargs}\n")
 
                 try:
                     stream = client.api.build(
@@ -241,6 +239,7 @@ async def create_container_ws(websocket: WebSocket):
                         forcerm=True,
                         decode=True,
                         buildargs=buildargs,
+                        labels={LABEL_MANAGED: "true"},
                     )
                     build_error = None
                     for chunk in stream:
@@ -527,18 +526,29 @@ def list_images() -> list[dict]:
 @app.delete("/api/images/{image_id:path}")
 async def remove_image(image_id: str, force: bool = False) -> dict:
     import docker
+    from fastapi.responses import JSONResponse
 
     try:
         client = docker.from_env()
     except Exception:
-        return {"error": "Cannot connect to Docker"}
+        return JSONResponse(
+            status_code=503,
+            content={"error": "Cannot connect to Docker"})
+
+    def _do_remove():
+        if force:
+            from fluid.docker_manager import force_remove_image
+            force_remove_image(client, image_id)
+        else:
+            client.images.remove(image_id, force=False)
 
     loop = asyncio.get_event_loop()
     try:
-        await loop.run_in_executor(
-            None, lambda: client.images.remove(image_id, force=force))
+        await loop.run_in_executor(None, _do_remove)
     except Exception as e:
-        return {"error": str(e)}
+        return JSONResponse(
+            status_code=409,
+            content={"error": str(e)})
 
     return {"status": "removed", "id": image_id}
 

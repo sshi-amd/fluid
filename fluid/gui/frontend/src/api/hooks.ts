@@ -150,6 +150,25 @@ export function useImportTemplate() {
   });
 }
 
+export function useUpdateTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      ...data
+    }: {
+      id: string;
+      name?: string;
+      description?: string;
+      content?: string;
+    }) => api.put<DockerfileTemplate>(`/templates/${id}`, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["templates"] });
+      qc.invalidateQueries({ queryKey: ["config"] });
+    },
+  });
+}
+
 export function useDeleteTemplate() {
   const qc = useQueryClient();
   return useMutation({

@@ -90,8 +90,58 @@ def list_managed_images(client: docker.DockerClient) -> list:
     return client.images.list(filters={"label": f"{LABEL_MANAGED}=true"})
 
 
-def remove_images(force: bool = False) -> None:
+def _stop_containers_for_image(
+    client: docker.DockerClient,
+    image_id: str,
+    on_log: Optional[callable] = None,
+) -> None:
+    """Stop and remove all containers using a given image."""
+    containers = client.containers.list(all=True, filters={"ancestor": image_id})
+    state = load_state()
+    for c in containers:
+        tag = c.name
+        if on_log:
+            on_log(f"Stopping container {tag}...")
+        if c.status == "running":
+            c.stop(timeout=5)
+        c.remove(force=True)
+        state.remove(c.name)
+        if on_log:
+            on_log(f"Removed container {tag}.")
+    save_state(state)
+
+
+def force_remove_image(
+    client: docker.DockerClient,
+    image_id: str,
+    on_log: Optional[callable] = None,
+) -> None:
+    """Force-remove an image, stopping any containers that use it first."""
+    _stop_containers_for_image(client, image_id, on_log=on_log)
+    client.images.remove(image_id, force=True)
+
+
+def remove_images(force: bool = False, name: Optional[str] = None) -> None:
     client = get_client()
+
+    if name:
+        try:
+            img = client.images.get(name)
+        except docker.errors.ImageNotFound:
+            console.print(f"[red]Image [bold]{name}[/bold] not found.[/red]")
+            return
+        tag = img.tags[0] if img.tags else img.short_id
+        if force:
+            console.print(f"[yellow]Force removing image [bold]{tag}[/bold]...[/yellow]")
+            force_remove_image(
+                client, img.id,
+                on_log=lambda msg: console.print(f"  [dim]{msg}[/dim]"))
+        else:
+            console.print(f"[yellow]Removing image [bold]{tag}[/bold]...[/yellow]")
+            client.images.remove(img.id, force=False)
+        console.print(f"[green]Removed image {tag}.[/green]")
+        return
+
     images = list_managed_images(client)
 
     if not images:
@@ -121,10 +171,16 @@ def remove_images(force: bool = False) -> None:
         console.print("[dim]No unused fluid images to remove.[/dim]")
         return
 
+    def _log(msg: str) -> None:
+        console.print(f"  [dim]{msg}[/dim]")
+
     for img in images:
         tag = img.tags[0] if img.tags else img.short_id
         console.print(f"[yellow]Removing image [bold]{tag}[/bold]...[/yellow]")
-        client.images.remove(img.id, force=force)
+        if force:
+            force_remove_image(client, img.id, on_log=_log)
+        else:
+            client.images.remove(img.id, force=False)
 
     console.print(f"[green]Removed {len(images)} image(s).[/green]")
 
@@ -146,6 +202,7 @@ def build_image(
             tag=tag,
             rm=True,
             forcerm=True,
+            labels={LABEL_MANAGED: "true"},
         )
     except docker.errors.BuildError as e:
         console.print(f"[red]Build failed:[/red]")
@@ -190,6 +247,7 @@ def build_image_headless(
         tag=tag,
         rm=True,
         forcerm=True,
+        labels={LABEL_MANAGED: "true"},
     )
 
     for chunk in build_logs:
