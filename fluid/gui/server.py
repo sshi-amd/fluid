@@ -1001,16 +1001,16 @@ def parse_template(req: ImportTemplateRequest) -> dict:
 
 # --- Static file serving ---
 
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-
 
 @app.get("/")
-@app.get("/{path:path}")
-def serve_spa(path: str = ""):
+def serve_index():
     index = STATIC_DIR / "index.html"
     if index.exists():
         return FileResponse(str(index))
     return {"error": "Frontend not found. Ensure fluid/gui/static/index.html exists."}
+
+
+app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
 
 
 def run(host: str = "127.0.0.1", port: int = 5000) -> None:

@@ -2,6 +2,9 @@
   "name": "fluid-gui",
   "version": "0.1.0",
   "private": true,
+  "description": "Desktop GUI for managing ROCm Docker development containers",
+  "author": "sshi-amd",
+  "repository": "https://github.com/sshi-amd/fluid",
   "main": "electron/main.js",
   "scripts": {
     "dev": "vite",
@@ -46,6 +49,7 @@
     },
     "win": {
       "target": "nsis"
-    }
+    },
+    "publish": null
   }
 }

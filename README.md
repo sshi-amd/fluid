@@ -2,6 +2,35 @@
 
 CLI and desktop GUI for managing ROCm Docker development containers. Quickly create, enter, and switch between containers running different ROCm versions — with built-in Cursor/VS Code and Claude Code integration.
 
+## Quick Start
+
+### Prerequisites
+
+| Dependency | Version | Notes |
+|------------|---------|-------|
+| **Python** | 3.10+ | Required for the CLI and GUI backend |
+| **Node.js** | 18+ (LTS) | Required for the Electron/React frontend |
+| **npm** | 9+ | Ships with Node.js |
+| **Docker** | 20.10+ | Must be installed and running |
+
+### Build and run
+
+```bash
+git clone https://github.com/sshi-amd/fluid.git
+cd fluid
+./build.sh
+```
+
+`build.sh` verifies prerequisites, installs the Python package, builds the React frontend, packages the Electron desktop app, and launches it.
+
+For CLI-only usage (no GUI):
+
+```bash
+pip install -e .
+fluid create -v latest -n myproject
+fluid enter -n myproject
+```
+
 ## Install
 
 ```bash
