@@ -68,7 +68,7 @@ class QueueItem(BaseModel):
 @app.get("/api/containers")
 def list_containers() -> list[ContainerInfo]:
     import docker
-    from fluid.config import LABEL_MANAGED, LABEL_ROCM_VERSION
+    from fluid.config import LABEL_MANAGED, LABEL_ROCM_VERSION, load_state
 
     try:
         client = docker.from_env()
@@ -80,6 +80,7 @@ def list_containers() -> list[ContainerInfo]:
         filters={"label": f"{LABEL_MANAGED}=true"},
     )
 
+    state = load_state()
     results = []
     for c in containers:
         mounts = c.attrs.get("Mounts", [])
@@ -89,9 +90,13 @@ def list_containers() -> list[ContainerInfo]:
                 workspace = m.get("Source", "")
                 break
 
+        record = state.get(c.name)
+        display = (record.display_name() if record
+                   else c.name.removeprefix("fluid-"))
+
         results.append(ContainerInfo(
             name=c.name,
-            display_name=c.name.removeprefix("fluid-"),
+            display_name=display,
             status=c.status,
             rocm_version=c.labels.get(LABEL_ROCM_VERSION, "?"),
             workspace=workspace,
@@ -206,6 +211,9 @@ async def create_container_ws(websocket: WebSocket):
                 tag_suffix = f"{distro}-{rocm_version}"
                 if gpu_family:
                     tag_suffix += f"-{gpu_family}"
+                # Colons are not allowed in the tag portion of a Docker
+                # image reference (only one colon separates repo:tag).
+                tag_suffix = tag_suffix.replace(":", "-")
                 image_tag = f"{IMAGE_PREFIX}:{tag_suffix}"
 
             try:
@@ -384,6 +392,44 @@ async def create_container_ws(websocket: WebSocket):
         await websocket.close()
     except Exception:
         pass
+
+
+class RenameRequest(BaseModel):
+    display_name: str
+
+
+@app.put("/api/containers/{name}/rename")
+def rename_container(name: str, req: RenameRequest) -> dict:
+    from fluid.config import CONTAINER_PREFIX, load_state, save_state
+
+    import docker
+
+    client = docker.from_env()
+    try:
+        container = client.containers.get(name)
+    except docker.errors.NotFound:
+        try:
+            container = client.containers.get(f"{CONTAINER_PREFIX}-{name}")
+            name = container.name
+        except docker.errors.NotFound:
+            return {"error": f"Container {name} not found"}
+
+    real_name = container.name
+    new_display = req.display_name.strip()
+    if not new_display:
+        return {"error": "Display name cannot be empty"}
+
+    state = load_state()
+    record = state.get(real_name)
+    if record:
+        record.custom_name = new_display
+        save_state(state)
+
+    return {
+        "status": "renamed",
+        "name": real_name,
+        "display_name": new_display,
+    }
 
 
 @app.post("/api/containers/{name}/start")

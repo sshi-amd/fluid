@@ -37,6 +37,30 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: text;
+  border-radius: var(--radius-sm);
+  padding: 1px 4px;
+  margin: -1px -4px;
+  transition: background 0.12s;
+}
+
+.name:hover {
+  background: var(--surface-raised);
+}
+
+.nameInput {
+  font-weight: 600;
+  font-size: var(--font-size-md);
+  flex: 1;
+  min-width: 0;
+  background: var(--surface-raised);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  padding: 1px 4px;
+  margin: -1px -4px;
+  outline: none;
+  font-family: inherit;
 }
 
 .meta {

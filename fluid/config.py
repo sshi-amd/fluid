@@ -35,9 +35,10 @@ class ContainerRecord:
     container_id: Optional[str] = None
     image_id: Optional[str] = None
     workspace_mount: Optional[str] = None
+    custom_name: Optional[str] = None
 
     def display_name(self) -> str:
-        return self.name.removeprefix(f"{CONTAINER_PREFIX}-")
+        return self.custom_name or self.name.removeprefix(f"{CONTAINER_PREFIX}-")
 
 
 @dataclass

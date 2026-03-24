@@ -9,6 +9,13 @@ import styles from "./App.module.css";
 
 export type Page = "containers" | "images" | "templates" | "settings";
 
+const pages: { key: Page; Component: React.FC }[] = [
+  { key: "containers", Component: ContainersPage },
+  { key: "images", Component: ImagesPage },
+  { key: "templates", Component: TemplatesPage },
+  { key: "settings", Component: SettingsPage },
+];
+
 export default function App() {
   const [page, setPage] = useState<Page>("containers");
 
@@ -18,10 +25,14 @@ export default function App() {
       <div className={styles.main}>
         <Header page={page} />
         <div className={styles.content}>
-          {page === "containers" && <ContainersPage />}
-          {page === "images" && <ImagesPage />}
-          {page === "templates" && <TemplatesPage />}
-          {page === "settings" && <SettingsPage />}
+          {pages.map(({ key, Component }) => (
+            <div
+              key={key}
+              className={page === key ? styles.pageActive : styles.pageHidden}
+            >
+              <Component />
+            </div>
+          ))}
         </div>
       </div>
     </div>

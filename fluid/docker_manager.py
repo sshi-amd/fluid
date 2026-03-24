@@ -287,6 +287,9 @@ def create_container_headless(
     tag_suffix = f"{distro}-{rocm_version}"
     if gpu_family:
         tag_suffix += f"-{gpu_family}"
+    # Colons are not allowed in the tag portion of a Docker
+    # image reference (only one colon separates repo:tag).
+    tag_suffix = tag_suffix.replace(":", "-")
     image_tag = f"{IMAGE_PREFIX}:{tag_suffix}"
     try:
         client.images.get(image_tag)

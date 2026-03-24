@@ -124,11 +124,14 @@ def make_image_tag(
 
     Produces tags like::
 
-        fluid:pytorch-rocm-rocm:6.4-torch:2.5
-        fluid:fluid-base-base:ubuntu-22.04
+        fluid:pytorch-rocm-rocm--6.4-torch--2.5
+        fluid:fluid-base-base--ubuntu-22.04
 
     The tag portion (after the ``:``) is capped at 50 characters.
     Args are appended in declaration order until the budget runs out.
+
+    The tag portion must never contain ``:``, as Docker references only
+    allow a single colon separating repository from tag.
     """
     template_slug = _sanitize_tag_part(template.name)
 
@@ -162,6 +165,9 @@ def make_image_tag(
         used += needed
 
     tag = "-".join(parts)
+    # Safety: ensure no stray colons survive in the tag portion –
+    # Docker only allows one colon (repo:tag).
+    tag = tag.replace(":", "-")
     return f"{prefix}:{tag}"
 
 
