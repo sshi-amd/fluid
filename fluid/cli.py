@@ -333,6 +333,118 @@ def config(
     console.print()
 
 
+@app.command()
+def gui(
+    remote: Optional[str] = typer.Option(
+        None,
+        "-r",
+        "--remote",
+        help="Connect to a remote Fluid backend via SSH (e.g. user@hostname).",
+    ),
+    port: int = typer.Option(
+        5000,
+        "-p",
+        "--port",
+        help="Backend port (local or remote).",
+    ),
+) -> None:
+    """Launch the Fluid desktop app. Use --remote to connect to a remote machine via SSH tunnel."""
+    import shutil
+    import signal
+    import socket
+    import subprocess
+    import sys
+    import time
+    from pathlib import Path
+
+    frontend_dir = Path(__file__).parent / "gui" / "frontend"
+    electron_bin = frontend_dir / "dist-electron" / "linux-unpacked" / "fluid-gui"
+    appimage = next(frontend_dir.glob("dist-electron/*.AppImage"), None)
+
+    exe = None
+    if appimage and appimage.exists():
+        exe = str(appimage)
+    elif electron_bin.exists():
+        exe = str(electron_bin)
+    elif shutil.which("electron"):
+        exe = None  # fall back to npx electron below
+    else:
+        console.print(
+            "[red]No Electron build found. Run [bold]./build.sh[/bold] first, "
+            "or install electron globally.[/red]"
+        )
+        raise typer.Exit(1)
+
+    backend_url = f"http://127.0.0.1:{port}"
+    ssh_proc = None
+    server_proc = None
+
+    def cleanup(signum=None, frame=None):
+        if ssh_proc and ssh_proc.poll() is None:
+            ssh_proc.terminate()
+        if server_proc and server_proc.poll() is None:
+            server_proc.terminate()
+        raise SystemExit(0)
+
+    signal.signal(signal.SIGINT, cleanup)
+    signal.signal(signal.SIGTERM, cleanup)
+
+    def wait_for_port(host: str, p: int, timeout: float = 15.0) -> bool:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                with socket.create_connection((host, p), timeout=1):
+                    return True
+            except OSError:
+                time.sleep(0.3)
+        return False
+
+    try:
+        if remote:
+            console.print(
+                f"[cyan]Opening SSH tunnel to [bold]{remote}[/bold] "
+                f"(local :{port} -> remote :{port}) …[/cyan]"
+            )
+            ssh_proc = subprocess.Popen(
+                ["ssh", "-N", "-L", f"{port}:localhost:{port}", remote],
+                stdin=subprocess.DEVNULL,
+            )
+            if not wait_for_port("127.0.0.1", port):
+                console.print(
+                    f"[red]Could not reach remote backend on port {port}. "
+                    f"Make sure [bold]fluid-gui[/bold] is running on [bold]{remote}[/bold].[/red]"
+                )
+                cleanup()
+        else:
+            console.print(f"[cyan]Starting Fluid backend on port {port} …[/cyan]")
+            server_proc = subprocess.Popen(
+                [sys.executable, "-m", "uvicorn", "fluid.gui.server:app",
+                 "--host", "127.0.0.1", "--port", str(port), "--log-level", "warning"],
+            )
+            if not wait_for_port("127.0.0.1", port):
+                console.print("[red]Backend failed to start.[/red]")
+                cleanup()
+
+        console.print("[green]Backend ready. Launching Electron …[/green]")
+
+        if exe:
+            electron_proc = subprocess.Popen(
+                [exe, f"--fluid-url={backend_url}"],
+            )
+        else:
+            electron_proc = subprocess.Popen(
+                ["npx", "electron", ".", f"--fluid-url={backend_url}"],
+                cwd=str(frontend_dir),
+            )
+
+        electron_proc.wait()
+    finally:
+        if ssh_proc and ssh_proc.poll() is None:
+            ssh_proc.terminate()
+        if server_proc and server_proc.poll() is None:
+            server_proc.terminate()
+
+
 @app.command(name="exit")
 def exit_cmd() -> None:
     """Exit the current container session (stops the container)."""

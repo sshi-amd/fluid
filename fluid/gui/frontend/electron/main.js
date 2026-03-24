@@ -9,6 +9,10 @@ const API_PORT = 5000;
 const DEV_URL = "http://localhost:5173";
 const PROD_URL = `http://127.0.0.1:${API_PORT}`;
 
+const externalUrl = process.argv
+  .find((a) => a.startsWith("--fluid-url="))
+  ?.split("=")[1];
+
 let mainWindow = null;
 let pythonProcess = null;
 
@@ -97,7 +101,9 @@ async function createWindow() {
     Menu.setApplicationMenu(null);
   }
 
-  if (isDev) {
+  if (externalUrl) {
+    await mainWindow.loadURL(externalUrl);
+  } else if (isDev) {
     await mainWindow.loadURL(DEV_URL);
     mainWindow.webContents.openDevTools({ mode: "detach" });
   } else {
@@ -118,13 +124,14 @@ async function createWindow() {
 // ─── App lifecycle ───────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
-  startPythonServer();
+  if (!externalUrl) {
+    startPythonServer();
 
-  try {
-    await waitForServer(`http://127.0.0.1:${API_PORT}/api/config`);
-  } catch (err) {
-    console.warn("[fluid] Server readiness check failed:", err.message);
-    // Continue anyway — the React app will show connection errors gracefully.
+    try {
+      await waitForServer(`http://127.0.0.1:${API_PORT}/api/config`);
+    } catch (err) {
+      console.warn("[fluid] Server readiness check failed:", err.message);
+    }
   }
 
   await createWindow();
@@ -137,12 +144,12 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", () => {
-  stopPythonServer();
+  if (!externalUrl) stopPythonServer();
   if (process.platform !== "darwin") {
     app.quit();
   }
 });
 
 app.on("before-quit", () => {
-  stopPythonServer();
+  if (!externalUrl) stopPythonServer();
 });

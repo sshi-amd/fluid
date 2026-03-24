@@ -144,6 +144,7 @@ fluid exit
 | `code -n <name>` | Open Cursor/VS Code attached to a container. Defaults to current container. |
 | `claude -n <name>` | Open Claude Code CLI inside a container. Defaults to current container. |
 | `kill -n <name>` | Stop and remove a container. Use `--all` to remove all fluid containers. |
+| `gui` | Launch the Fluid desktop app. Use `--remote user@host` to connect to a remote machine via SSH tunnel. |
 | `clean` | Remove Docker images built by fluid. Use `--force` to also remove images in use. |
 | `exit` | Exit and stop the current container session. |
 | `list` | Show all managed containers in a table. |
@@ -165,6 +166,10 @@ fluid exit
 **`kill`**
 - `-n, --name` — Container name (defaults to current container if omitted)
 - `--all` — Kill all managed containers
+
+**`gui`**
+- `-r, --remote` — SSH target to tunnel to (e.g. `user@hostname`). Omit to run locally.
+- `-p, --port` — Backend port (default: `5000`)
 
 **`clean`**
 - `--force` — Also remove images still in use by existing containers
