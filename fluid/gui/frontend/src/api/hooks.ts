@@ -52,6 +52,18 @@ export function useRemoveContainer() {
   });
 }
 
+export function useRenameContainer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ name, displayName }: { name: string; displayName: string }) =>
+      api.put<{ status: string; display_name: string }>(
+        `/containers/${name}/rename`,
+        { display_name: displayName }
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["containers"] }),
+  });
+}
+
 export function useOpenInEditor() {
   return useMutation({
     mutationFn: (name: string) =>

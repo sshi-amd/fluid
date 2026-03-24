@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   useStartContainer,
   useStopContainer,
   useRemoveContainer,
+  useRenameContainer,
   useOpenInEditor,
   type ContainerInfo,
 } from "../api/hooks";
@@ -21,13 +22,31 @@ export default function ContainerCard({ container }: Props) {
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [bashKey, setBashKey] = useState(0);
   const [claudeKey, setClaudeKey] = useState(0);
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState(container.display_name);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const start = useStartContainer();
   const stop = useStopContainer();
   const remove = useRemoveContainer();
+  const rename = useRenameContainer();
   const openEditor = useOpenInEditor();
 
   const isRunning = container.status === "running";
+
+  function startEditing() {
+    setEditValue(container.display_name);
+    setEditing(true);
+    requestAnimationFrame(() => inputRef.current?.select());
+  }
+
+  function commitRename() {
+    setEditing(false);
+    const trimmed = editValue.trim();
+    if (trimmed && trimmed !== container.display_name) {
+      rename.mutate({ name: container.name, displayName: trimmed });
+    }
+  }
 
   function terminalWsUrl(cmd: string) {
     return `${WS_BASE}/ws/terminal/${encodeURIComponent(container.name)}?cmd=${encodeURIComponent(cmd)}`;
@@ -46,11 +65,31 @@ export default function ContainerCard({ container }: Props) {
       <div className={styles.header}>
         <div className={styles.nameRow}>
           <span className={`status-dot ${statusClass}`} />
-          <span className={styles.name}>{container.display_name}</span>
+          {editing ? (
+            <input
+              ref={inputRef}
+              className={styles.nameInput}
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitRename();
+                if (e.key === "Escape") setEditing(false);
+              }}
+              autoFocus
+            />
+          ) : (
+            <span
+              className={styles.name}
+              onDoubleClick={startEditing}
+              title="Double-click to rename"
+            >
+              {container.display_name}
+            </span>
+          )}
           <span className={`badge badge-${statusClass}`}>{container.status}</span>
         </div>
         <div className={styles.meta}>
-          <span>ROCm {container.rocm_version}</span>
           {container.workspace && (
             <span className={styles.workspace} title={container.workspace}>
               {container.workspace.replace(/^.*\//, "…/")}
