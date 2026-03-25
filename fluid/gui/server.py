@@ -306,7 +306,10 @@ async def create_container_ws(websocket: WebSocket):
                 if src.exists():
                     volumes[str(src)] = {"bind": dst, "mode": mode}
 
-            host_gids = _resolve_device_gids()
+            gpu_devices = [d for d in ["/dev/kfd", "/dev/dri"]
+                           if Path(d).exists()]
+            host_gids = _resolve_device_gids() if gpu_devices else []
+
             env = {"ROCM_VERSION": rocm_version}
             env.update(config.env_vars())
 
@@ -318,8 +321,8 @@ async def create_container_ws(websocket: WebSocket):
                 tty=True,
                 detach=True,
                 volumes=volumes,
-                devices=["/dev/kfd", "/dev/dri"],
-                group_add=host_gids,
+                devices=gpu_devices or None,
+                group_add=host_gids or None,
                 security_opt=["seccomp=unconfined"],
                 labels={
                     LABEL_MANAGED: "true",

@@ -339,8 +339,8 @@ def create_container_headless(
         tty=True,
         detach=True,
         volumes=volumes,
-        devices=["/dev/kfd", "/dev/dri"],
-        group_add=host_gids,
+        devices=[d for d in ["/dev/kfd", "/dev/dri"] if Path(d).exists()] or None,
+        group_add=host_gids or None,
         security_opt=["seccomp=unconfined"],
         labels={
             LABEL_MANAGED: "true",
