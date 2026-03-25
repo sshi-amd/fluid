@@ -25,7 +25,7 @@ RUN locale-gen en_US.UTF-8"""
 
 _APT_NODEJS = """\
 ENV NODE_VERSION=22
-RUN ARCH=$(dpkg --print-architecture) \\
+RUN ARCH=$(uname -m | sed 's/x86_64/x64/;s/aarch64/arm64/') \\
     && curl -fsSL https://nodejs.org/dist/latest-v${NODE_VERSION}.x/SHASUMS256.txt -o /tmp/SHASUMS256.txt \\
     && NODE_FULL=$(grep "linux-${ARCH}.tar.xz" /tmp/SHASUMS256.txt | awk '{print $2}' | head -1) \\
     && curl -fsSL "https://nodejs.org/dist/latest-v${NODE_VERSION}.x/${NODE_FULL}" -o /tmp/node.tar.xz \\
