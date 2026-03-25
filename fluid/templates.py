@@ -208,7 +208,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \\
 
 RUN locale-gen en_US.UTF-8
 
-RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - \\
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \\
     && apt-get install -y nodejs \\
     && rm -rf /var/lib/apt/lists/*
 
@@ -266,7 +266,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \\
 
 RUN locale-gen en_US.UTF-8
 
-RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - \\
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \\
     && apt-get install -y nodejs \\
     && rm -rf /var/lib/apt/lists/*
 

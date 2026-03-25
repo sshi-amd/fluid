@@ -24,7 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \\
 RUN locale-gen en_US.UTF-8"""
 
 _APT_NODEJS = """\
-RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - \\
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \\
     && apt-get install -y nodejs \\
     && rm -rf /var/lib/apt/lists/*"""
 
@@ -47,7 +47,7 @@ RUN yum install -y \\
     && yum clean all"""
 
 _YUM_NODEJS = """\
-RUN curl -fsSL https://rpm.nodesource.com/setup_lts.x | bash - \\
+RUN curl -fsSL https://rpm.nodesource.com/setup_22.x | bash - \\
     && yum install -y nodejs \\
     && yum clean all"""
 
