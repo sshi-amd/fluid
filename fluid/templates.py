@@ -208,9 +208,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \\
 
 RUN locale-gen en_US.UTF-8
 
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \\
-    && apt-get install -y nodejs \\
-    && rm -rf /var/lib/apt/lists/*
+ENV NODE_VERSION=22
+RUN ARCH=$(dpkg --print-architecture) \\
+    && curl -fsSL https://nodejs.org/dist/latest-v${NODE_VERSION}.x/SHASUMS256.txt -o /tmp/SHASUMS256.txt \\
+    && NODE_FULL=$(grep "linux-${ARCH}.tar.xz" /tmp/SHASUMS256.txt | awk '{print $2}' | head -1) \\
+    && curl -fsSL "https://nodejs.org/dist/latest-v${NODE_VERSION}.x/${NODE_FULL}" -o /tmp/node.tar.xz \\
+    && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 \\
+    && rm /tmp/node.tar.xz /tmp/SHASUMS256.txt
 
 RUN npm install -g @anthropic-ai/claude-code
 
@@ -266,9 +270,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \\
 
 RUN locale-gen en_US.UTF-8
 
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \\
-    && apt-get install -y nodejs \\
-    && rm -rf /var/lib/apt/lists/*
+ENV NODE_VERSION=22
+RUN ARCH=$(dpkg --print-architecture) \\
+    && curl -fsSL https://nodejs.org/dist/latest-v${NODE_VERSION}.x/SHASUMS256.txt -o /tmp/SHASUMS256.txt \\
+    && NODE_FULL=$(grep "linux-${ARCH}.tar.xz" /tmp/SHASUMS256.txt | awk '{print $2}' | head -1) \\
+    && curl -fsSL "https://nodejs.org/dist/latest-v${NODE_VERSION}.x/${NODE_FULL}" -o /tmp/node.tar.xz \\
+    && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 \\
+    && rm /tmp/node.tar.xz /tmp/SHASUMS256.txt
 
 RUN npm install -g @anthropic-ai/claude-code
 

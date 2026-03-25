@@ -24,9 +24,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \\
 RUN locale-gen en_US.UTF-8"""
 
 _APT_NODEJS = """\
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \\
-    && apt-get install -y nodejs \\
-    && rm -rf /var/lib/apt/lists/*"""
+ENV NODE_VERSION=22
+RUN ARCH=$(dpkg --print-architecture) \\
+    && curl -fsSL https://nodejs.org/dist/latest-v${NODE_VERSION}.x/SHASUMS256.txt -o /tmp/SHASUMS256.txt \\
+    && NODE_FULL=$(grep "linux-${ARCH}.tar.xz" /tmp/SHASUMS256.txt | awk '{print $2}' | head -1) \\
+    && curl -fsSL "https://nodejs.org/dist/latest-v${NODE_VERSION}.x/${NODE_FULL}" -o /tmp/node.tar.xz \\
+    && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 \\
+    && rm /tmp/node.tar.xz /tmp/SHASUMS256.txt"""
 
 _YUM_PACKAGES = """\
 RUN yum install -y \\
@@ -47,9 +51,13 @@ RUN yum install -y \\
     && yum clean all"""
 
 _YUM_NODEJS = """\
-RUN curl -fsSL https://rpm.nodesource.com/setup_22.x | bash - \\
-    && yum install -y nodejs \\
-    && yum clean all"""
+ENV NODE_VERSION=22
+RUN ARCH=$(uname -m | sed 's/x86_64/x64/;s/aarch64/arm64/') \\
+    && curl -fsSL https://nodejs.org/dist/latest-v${NODE_VERSION}.x/SHASUMS256.txt -o /tmp/SHASUMS256.txt \\
+    && NODE_FULL=$(grep "linux-${ARCH}.tar.xz" /tmp/SHASUMS256.txt | awk '{print $2}' | head -1) \\
+    && curl -fsSL "https://nodejs.org/dist/latest-v${NODE_VERSION}.x/${NODE_FULL}" -o /tmp/node.tar.xz \\
+    && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 \\
+    && rm /tmp/node.tar.xz /tmp/SHASUMS256.txt"""
 
 _CLAUDE_CODE_INSTALL = """\
 RUN npm install -g @anthropic-ai/claude-code"""
